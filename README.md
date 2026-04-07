@@ -1,46 +1,78 @@
-Change into the repository's directory:
-bash
-cc:
-cd your_repository
-Install the required dependencies:
-
-cc:
-pip install -r requirements.txt
-Update the main.py file with your desired input size, output size, and initial state for the Game class.
-Run the training script:
-
-css
-cc:
-python main.py
-This will train the LLM model and save it as saved_model.pt.
-
-To load and use the trained model in another script or project, follow these steps:
-a. Initialize an LLM model with the appropriate input and output sizes.
-
-b. Load the saved model's state dictionary:
-
-python 
-cc:
-llm.load_state_dict(torch.load("./saved_model.pt"))
-Now you can use the trained model for making predictions or further fine-tuning.
-
-## Infrastructure pass-likelihood scoring
-
-This repo now includes `scoring.py`, a lightweight implementation of a
-weighted **Pass-Likelihood + Land Relevance** model for infrastructure
-proposals.
-
-### Run the demo
+## Quick start
 
 ```bash
-python scoring.py
+git clone https://github.com/amlitio/infra-pass-likelihood-scoring.git
+cd infra-pass-likelihood-scoring
+python scoring.py --demo
 ```
 
-### Run tests
+## How to run
+
+### Option 1: Demo mode
+
+```bash
+python scoring.py --demo
+```
+
+### Option 2: Pass all fields as flags
+
+```bash
+python scoring.py \
+  --procedural-stage 20 \
+  --sponsor-strength 9 \
+  --funding-clarity 12 \
+  --route-specificity 10 \
+  --need-case 10 \
+  --row-tractability 7 \
+  --local-plan-alignment 6 \
+  --opposition-drag 2 \
+  --land-monetization-fit 14
+```
+
+### Option 3: Use a JSON input file
+
+Create `project.json`:
+
+```json
+{
+  "procedural_stage": 20,
+  "sponsor_strength": 8,
+  "funding_clarity": 10,
+  "route_specificity": 8,
+  "need_case": 10,
+  "row_tractability": 7,
+  "local_plan_alignment": 6,
+  "opposition_drag": 2,
+  "land_monetization_fit": 12
+}
+```
+
+Run:
+
+```bash
+python scoring.py --input-json project.json
+```
+
+## Output
+
+The CLI prints:
+1. Category-by-category breakdown (with opposition as a negative contribution)
+2. Final score on 0-100
+3. Interpretation band:
+   - 85-100: very high probability / very actionable
+   - 70-84: strong watchlist candidate
+   - 55-69: speculative but worth targeted hunting
+   - below 55: mostly informational, not land-first actionable
+
+## Tests
+
+Run unit tests:
 
 ```bash
 python -m unittest test_scoring.py
 ```
+
+~~~
 
 ### Scoring inputs
 
