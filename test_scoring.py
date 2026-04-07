@@ -29,10 +29,12 @@ class ScoringTests(unittest.TestCase):
         self.client.__enter__()
 
     def tearDown(self):
-        if hasattr(self.client, "app"):
-            self.client.app.state.repository.engine.dispose()
-        if hasattr(self.client, "exit_stack"):
-            self.client.__exit__(None, None, None)
+        client = getattr(self, "client", None)
+        if client is not None and hasattr(client, "exit_stack"):
+            client.__exit__(None, None, None)
+        if client is not None and hasattr(client, "app"):
+            client.app.state.repository.engine.dispose()
+        self.client = None
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def register_org(self, organization_name="Atlas Infra", email="admin@example.com"):
@@ -291,8 +293,9 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(response.json()["database_backend"], "sqlite")
 
     def test_legacy_sqlite_db_is_backed_up_and_reset(self):
-        self.client.app.state.repository.engine.dispose()
-        self.client.__exit__(None, None, None)
+        existing_client = self.client
+        existing_client.__exit__(None, None, None)
+        existing_client.app.state.repository.engine.dispose()
         legacy_db = self.test_dir / "test.db"
         legacy_db.unlink(missing_ok=True)
         with sqlite3.connect(legacy_db) as connection:

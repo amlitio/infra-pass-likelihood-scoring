@@ -44,7 +44,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         repository.init_db()
-        yield
+        try:
+            yield
+        finally:
+            repository.engine.dispose()
 
     app = FastAPI(
         title=settings.app_name,

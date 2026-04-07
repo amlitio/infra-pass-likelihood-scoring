@@ -13,6 +13,7 @@ from typing import Iterator
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from .auth import generate_access_token, hash_access_token, hash_password, token_expiry, utc_now, verify_password
 from .config import Settings
@@ -55,9 +56,11 @@ class ProjectRepository:
 
     def _build_engine(self) -> None:
         connect_args = {"check_same_thread": False} if self.settings.database_backend == "sqlite" else {}
+        engine_kwargs = {}
         if self.settings.database_backend == "sqlite":
             self.settings.data_dir.mkdir(parents=True, exist_ok=True)
-        self.engine = create_engine(self.settings.database_url, future=True, connect_args=connect_args)
+            engine_kwargs["poolclass"] = NullPool
+        self.engine = create_engine(self.settings.database_url, future=True, connect_args=connect_args, **engine_kwargs)
         self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False, future=True)
 
     def _sqlite_db_path(self) -> Path:

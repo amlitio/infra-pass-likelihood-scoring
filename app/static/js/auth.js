@@ -6,6 +6,7 @@ export function setAuthenticatedUi() {
   setText("session-user", `${state.user.full_name} | ${state.user.role}`);
   setText("kpi-org", state.organization.name);
   el("auth-grid").classList.add("hidden");
+  el("analytics-grid").classList.remove("hidden");
   el("workspace-grid").classList.remove("hidden");
   el("lower-grid").classList.remove("hidden");
 }
@@ -14,13 +15,28 @@ export function clearSessionUi() {
   state.user = null;
   state.organization = null;
   state.projects = [];
+  state.members = [];
+  state.sessions = [];
   state.selectedProjectId = null;
+  state.filters = {
+    query: "",
+    band: "all",
+    sort: "score-desc",
+  };
   setText("session-user", "Not signed in");
   setText("kpi-org", "None");
   el("auth-grid").classList.remove("hidden");
+  el("analytics-grid").classList.add("hidden");
   el("workspace-grid").classList.add("hidden");
   el("lower-grid").classList.add("hidden");
   el("project-list").innerHTML = "";
+  el("member-list").innerHTML = "";
+  el("session-list").innerHTML = "";
+  setText("project-list-meta", "No active filters");
+  setText("session-status", "");
+  el("project-search").value = "";
+  el("project-band").value = "all";
+  el("project-sort").value = "score-desc";
   setText("project-detail", "Sign in to inspect project history.");
 }
 

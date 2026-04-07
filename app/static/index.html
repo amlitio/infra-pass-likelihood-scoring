@@ -9,28 +9,32 @@
 <body>
   <div class="shell">
     <aside class="rail">
-      <div>
-        <p class="eyebrow">Phase 2 Control Surface</p>
+      <div class="rail-top">
+        <p class="eyebrow">Enterprise Workspace</p>
         <h1>Infrastructure Pass Likelihood Platform</h1>
-        <p class="lede">Organization-aware scoring operations with sign-in, portfolio controls, and PostgreSQL-ready deployment.</p>
+        <p class="lede">Premium analyst operations for scoring infrastructure proposals, managing teams, and surfacing the most actionable projects across the portfolio.</p>
       </div>
-      <div class="rail-block">
-        <p class="rail-label">Auth</p>
-        <p>Bearer-token access scoped to a single organization with role-aware admin actions.</p>
+      <div class="rail-middle">
+        <div class="rail-block">
+          <p class="rail-label">Workspace</p>
+          <p>Guided intake, analyst review, portfolio health, and session-aware access controls in one surface.</p>
+        </div>
+        <div class="rail-block">
+          <p class="rail-label">Deployment</p>
+          <p>SQLite for local work, PostgreSQL for production, Alembic migrations, and container-aware startup checks.</p>
+        </div>
       </div>
-      <div class="rail-block">
-        <p class="rail-label">Persistence</p>
-        <p>SQLite for local work, PostgreSQL for multi-user deployment, one application surface for both.</p>
+      <div class="rail-bottom">
+        <a class="docs-link" href="/docs" target="_blank" rel="noreferrer">Open API docs</a>
       </div>
-      <a class="docs-link" href="/docs" target="_blank" rel="noreferrer">Open API docs</a>
     </aside>
 
     <main class="workspace">
       <section class="hero">
-        <div>
-          <p class="eyebrow">Phase 2 Platform</p>
-          <h2>Run a secure, multi-organization scoring workspace.</h2>
-          <p class="lede">Register an organization, sign in, add teammates, and manage a portfolio that stays isolated to your org.</p>
+        <div class="hero-copy">
+          <p class="eyebrow">Analyst Command</p>
+          <h2>Operate the entire portfolio from one premium scoring workspace.</h2>
+          <p class="lede">Register an organization, onboard teammates, guide new projects through a structured intake flow, and monitor score movement with portfolio-level visibility.</p>
         </div>
         <div class="kpi-grid">
           <div>
@@ -53,7 +57,7 @@
       </section>
 
       <section class="content-grid auth-grid" id="auth-grid">
-        <section class="pane">
+        <section class="pane auth-pane">
           <div class="pane-header">
             <h3>Register organization</h3>
             <p>Create an admin account and bootstrap an isolated workspace.</p>
@@ -73,10 +77,10 @@
           <p class="status" id="register-status"></p>
         </section>
 
-        <section class="pane">
+        <section class="pane auth-pane">
           <div class="pane-header">
             <h3>Sign in</h3>
-            <p>Resume an existing organization session with your bearer token account.</p>
+            <p>Resume an existing organization session with managed access.</p>
           </div>
           <form id="login-form">
             <label>Email<input name="email" type="email" required></label>
@@ -91,82 +95,181 @@
         </section>
       </section>
 
-      <section class="content-grid hidden" id="workspace-grid">
-        <section class="pane">
+      <section class="analytics-grid hidden" id="analytics-grid">
+        <section class="pane analytics-pane">
           <div class="pane-header">
-            <h3>Create project</h3>
-            <p>Persist a new candidate and generate an auditable score run.</p>
+            <h3>Portfolio shape</h3>
+            <p>Distribution of current project scores across the organization.</p>
           </div>
-          <form id="project-form">
-            <div class="field-row">
-              <label>Project name<input name="project_name" required></label>
-              <label>Project ID<input name="project_id"></label>
+          <div id="score-distribution" class="chart-surface"></div>
+        </section>
+        <section class="pane analytics-pane">
+          <div class="pane-header">
+            <h3>Recent movement</h3>
+            <p>Latest score events and score momentum across active projects.</p>
+          </div>
+          <div id="score-trend" class="chart-surface trend-surface"></div>
+        </section>
+      </section>
+
+      <section class="workspace-grid hidden" id="workspace-grid">
+        <section class="pane intake-pane">
+          <div class="pane-header">
+            <h3>Project intake</h3>
+            <p>Guide candidates through a structured scoring intake before recording the first score run.</p>
+          </div>
+
+          <div class="stepper">
+            <button type="button" class="step-tab active" data-step="0">1. Identity</button>
+            <button type="button" class="step-tab" data-step="1">2. Signals</button>
+            <button type="button" class="step-tab" data-step="2">3. Review</button>
+          </div>
+
+          <form id="project-form" class="intake-form">
+            <section class="step-panel active" data-step-panel="0">
+              <div class="field-row">
+                <label>Project name<input name="project_name" required></label>
+                <label>Project ID<input name="project_id"></label>
+              </div>
+              <div class="field-row">
+                <label>Sponsor<input name="sponsor_organization"></label>
+                <label>Sector<input name="sector" placeholder="Transmission, rail, water"></label>
+              </div>
+              <div class="field-row">
+                <label>Region<input name="region"></label>
+                <label>Notes<textarea name="notes" rows="4" placeholder="Critical context, timing, or analyst notes"></textarea></label>
+              </div>
+            </section>
+
+            <section class="step-panel" data-step-panel="1">
+              <div class="signal-grid">
+                <label>Procedural stage<input type="number" name="procedural_stage" min="0" max="25" value="20" required></label>
+                <label>Sponsor strength<input type="number" name="sponsor_strength" min="0" max="10" value="8" required></label>
+                <label>Funding clarity<input type="number" name="funding_clarity" min="0" max="15" value="10" required></label>
+                <label>Route specificity<input type="number" name="route_specificity" min="0" max="10" value="8" required></label>
+                <label>Need case<input type="number" name="need_case" min="0" max="10" value="10" required></label>
+                <label>ROW tractability<input type="number" name="row_tractability" min="0" max="10" value="7" required></label>
+                <label>Local plan alignment<input type="number" name="local_plan_alignment" min="0" max="8" value="6" required></label>
+                <label>Opposition drag<input type="number" name="opposition_drag" min="0" max="7" value="2" required></label>
+                <label>Land monetization fit<input type="number" name="land_monetization_fit" min="0" max="19" value="12" required></label>
+              </div>
+            </section>
+
+            <section class="step-panel" data-step-panel="2">
+              <div class="review-grid">
+                <div class="review-card">
+                  <p class="eyebrow">Candidate summary</p>
+                  <div id="intake-review" class="review-content"></div>
+                </div>
+                <div class="review-card review-accent">
+                  <p class="eyebrow">Operator note</p>
+                  <p>Submit once the candidate identity is complete and the scoring signals reflect the current analyst view. The system will persist the project and generate the first auditable run.</p>
+                </div>
+              </div>
+            </section>
+
+            <div class="step-actions">
+              <button type="button" class="secondary-button" id="step-back">Back</button>
+              <button type="button" class="secondary-button" id="step-next">Next</button>
+              <button type="submit" id="step-submit" class="hidden">Create and score</button>
             </div>
-            <div class="field-row">
-              <label>Sponsor<input name="sponsor_organization"></label>
-              <label>Sector<input name="sector"></label>
-            </div>
-            <div class="field-row">
-              <label>Region<input name="region"></label>
-              <label>Notes<input name="notes"></label>
-            </div>
-            <div class="signal-grid">
-              <label>Procedural stage<input type="number" name="procedural_stage" min="0" max="25" value="20" required></label>
-              <label>Sponsor strength<input type="number" name="sponsor_strength" min="0" max="10" value="8" required></label>
-              <label>Funding clarity<input type="number" name="funding_clarity" min="0" max="15" value="10" required></label>
-              <label>Route specificity<input type="number" name="route_specificity" min="0" max="10" value="8" required></label>
-              <label>Need case<input type="number" name="need_case" min="0" max="10" value="10" required></label>
-              <label>ROW tractability<input type="number" name="row_tractability" min="0" max="10" value="7" required></label>
-              <label>Local plan alignment<input type="number" name="local_plan_alignment" min="0" max="8" value="6" required></label>
-              <label>Opposition drag<input type="number" name="opposition_drag" min="0" max="7" value="2" required></label>
-              <label>Land monetization fit<input type="number" name="land_monetization_fit" min="0" max="19" value="12" required></label>
-            </div>
-            <button type="submit">Create and score</button>
           </form>
           <p class="status" id="project-status"></p>
         </section>
 
-        <section class="pane">
+        <section class="pane admin-pane">
           <div class="pane-header">
-            <h3>Organization admin</h3>
-            <p>Add teammates and bulk-load project pipelines into your org.</p>
+            <h3>Organization operations</h3>
+            <p>Manage analyst access and ingest external portfolios without leaving the workspace.</p>
           </div>
-          <form id="member-form">
-            <div class="field-row">
-              <label>Member name<input name="full_name"></label>
-              <label>Email<input name="email" type="email"></label>
-            </div>
-            <div class="field-row">
-              <label>Password<input name="password" type="password"></label>
-              <label>Role<input name="role" value="analyst"></label>
-            </div>
-            <button type="submit">Add member</button>
-          </form>
-          <p class="status" id="member-status"></p>
-          <form id="import-form">
-            <label>Filename<input name="filename" value="portfolio-import.csv"></label>
-            <label>CSV content<textarea name="csv_content" rows="10" spellcheck="false">project_id,project_name,sponsor_organization,sector,region,notes,procedural_stage,sponsor_strength,funding_clarity,route_specificity,need_case,row_tractability,local_plan_alignment,opposition_drag,land_monetization_fit
+          <div class="admin-stack">
+            <form id="member-form" class="stack-form">
+              <div class="mini-header">
+                <span>Add teammate</span>
+                <span>Role-based org access</span>
+              </div>
+              <div class="field-row">
+                <label>Member name<input name="full_name"></label>
+                <label>Email<input name="email" type="email"></label>
+              </div>
+              <div class="field-row">
+                <label>Password<input name="password" type="password"></label>
+                <label>Role<input name="role" value="analyst"></label>
+              </div>
+              <button type="submit">Add member</button>
+              <p class="status" id="member-status"></p>
+            </form>
+
+            <form id="import-form" class="stack-form">
+              <div class="mini-header">
+                <span>Batch import</span>
+                <span>Portfolio onboarding</span>
+              </div>
+              <label>Filename<input name="filename" value="portfolio-import.csv"></label>
+              <label>CSV content<textarea name="csv_content" rows="10" spellcheck="false">project_id,project_name,sponsor_organization,sector,region,notes,procedural_stage,sponsor_strength,funding_clarity,route_specificity,need_case,row_tractability,local_plan_alignment,opposition_drag,land_monetization_fit
 P-200,Western Link,Atlas Infrastructure,Transmission,CA,Priority corridor,18,8,11,8,9,6,5,2,13
 P-201,South Basin Waterline,Civic Water Authority,Water,NV,Expansion phase,14,7,9,7,8,6,6,1,11</textarea></label>
-            <button type="submit">Import portfolio</button>
-          </form>
-          <p class="status" id="import-status"></p>
+              <button type="submit">Import portfolio</button>
+              <p class="status" id="import-status"></p>
+            </form>
+
+            <section class="stack-form intelligence-card">
+              <div class="mini-header">
+                <span>Team intelligence</span>
+                <span>Members and sessions</span>
+              </div>
+              <div class="intelligence-grid">
+                <div>
+                  <p class="eyebrow">Members</p>
+                  <div id="member-list" class="team-list"></div>
+                </div>
+                <div>
+                  <p class="eyebrow">Active sessions</p>
+                  <div id="session-list" class="team-list"></div>
+                </div>
+              </div>
+              <p class="status" id="session-status"></p>
+            </section>
+          </div>
         </section>
       </section>
 
       <section class="lower-grid hidden" id="lower-grid">
-        <section class="pane">
+        <section class="pane projects-pane">
           <div class="pane-header">
             <h3>Projects</h3>
-            <p>Only projects from your organization are visible here.</p>
+            <p>Live organization pipeline with current score context and priority signal.</p>
+          </div>
+          <div class="filters-bar">
+            <label>Search<input id="project-search" placeholder="Search project, sponsor, sector"></label>
+            <label>Band
+              <select id="project-band">
+                <option value="all">All bands</option>
+                <option value="very-high">Very high</option>
+                <option value="watchlist">Watchlist</option>
+                <option value="targeted">Targeted</option>
+                <option value="informational">Informational</option>
+              </select>
+            </label>
+            <label>Sort
+              <select id="project-sort">
+                <option value="score-desc">Score high to low</option>
+                <option value="score-asc">Score low to high</option>
+                <option value="updated-desc">Recently updated</option>
+                <option value="name-asc">Name A-Z</option>
+              </select>
+            </label>
+          </div>
+          <div class="toolbar-row">
+            <p id="project-list-meta" class="toolbar-copy">No active filters</p>
           </div>
           <div id="project-list" class="project-list"></div>
         </section>
 
         <section class="pane detail-pane">
           <div class="pane-header">
-            <h3>Selected project</h3>
-            <p>Review current rationale, history, and rescore from the same org-scoped workspace.</p>
+            <h3>Analyst workspace</h3>
+            <p>Review score composition, momentum, and rationale before recording the next run.</p>
           </div>
           <div id="project-detail" class="project-detail empty-state">Sign in to inspect project history.</div>
         </section>

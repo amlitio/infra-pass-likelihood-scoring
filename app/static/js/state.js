@@ -3,4 +3,11 @@ export const state = {
   projects: [],
   user: null,
   organization: null,
+  members: [],
+  sessions: [],
+  filters: {
+    query: "",
+    band: "all",
+    sort: "score-desc",
+  },
 };
