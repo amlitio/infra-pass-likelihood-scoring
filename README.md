@@ -1,40 +1,68 @@
-## Quick start
+# Infrastructure Pass Likelihood Platform
+
+This project is now structured as an enterprise-ready scoring service for infrastructure proposal evaluation. It keeps the original CLI workflow, while adding a production-oriented application package, HTTP API, health probes, configuration, and batch scoring support.
+
+## What is included
+
+- Reusable domain and service layers in `app/`
+- Backward-compatible CLI entry point in `scoring.py`
+- FastAPI service with OpenAPI docs
+- Single-project and batch scoring endpoints
+- Liveness and readiness endpoints for deployment environments
+- Expanded automated tests for CLI and API behavior
+
+## Architecture
+
+- `app/domain.py`: validated scoring inputs and domain constants
+- `app/service.py`: scoring, interpretation, and utilization logic
+- `app/schemas.py`: request and response contracts
+- `app/main.py`: FastAPI app and endpoints
+- `app/config.py`: environment-driven runtime settings
+- `app/cli.py`: command-line experience
+
+## Install
 
 ```bash
-git clone https://github.com/amlitio/infra-pass-likelihood-scoring.git
-cd infra-pass-likelihood-scoring
+python -m pip install -r requirements.txt
+```
+
+## Run the CLI
+
+```bash
 python scoring.py --demo
 ```
 
-## How to run
-
-### Option 1: Demo mode
-
 ```bash
-python scoring.py --demo
+python scoring.py --procedural-stage 20 --sponsor-strength 9 --funding-clarity 12 --route-specificity 10 --need-case 10 --row-tractability 7 --local-plan-alignment 6 --opposition-drag 2 --land-monetization-fit 14
 ```
 
-### Option 2: Pass all fields as flags
-
 ```bash
-python scoring.py \
-  --procedural-stage 20 \
-  --sponsor-strength 9 \
-  --funding-clarity 12 \
-  --route-specificity 10 \
-  --need-case 10 \
-  --row-tractability 7 \
-  --local-plan-alignment 6 \
-  --opposition-drag 2 \
-  --land-monetization-fit 14
+python scoring.py --input-json project.json
 ```
 
-### Option 3: Use a JSON input file
+## Run the API
 
-Create `project.json`:
+```bash
+uvicorn app.main:app --reload
+```
+
+Open:
+
+- `http://127.0.0.1:8000/docs`
+- `http://127.0.0.1:8000/redoc`
+
+## API endpoints
+
+### `POST /v1/score`
+
+Scores a single project.
+
+Example payload:
 
 ```json
 {
+  "project_id": "P-100",
+  "project_name": "North Corridor Expansion",
   "procedural_stage": 20,
   "sponsor_strength": 8,
   "funding_clarity": 10,
@@ -47,47 +75,32 @@ Create `project.json`:
 }
 ```
 
-Run:
+### `POST /v1/score/batch`
 
-```bash
-python scoring.py --input-json project.json
-```
+Scores up to 500 projects in one request and returns summary statistics.
 
-## Output
+### `GET /health/live`
 
-The CLI prints:
-1. Category-by-category breakdown (with opposition as a negative contribution)
-2. Final score on 0-100
-3. Interpretation band:
-   - 85-100: very high probability / very actionable
-   - 70-84: strong watchlist candidate
-   - 55-69: speculative but worth targeted hunting
-   - below 55: mostly informational, not land-first actionable
+Basic liveness probe.
+
+### `GET /health/ready`
+
+Readiness probe with environment and version details.
+
+### `GET /v1/metadata`
+
+Service metadata and capabilities.
+
+## Configuration
+
+The service reads these optional environment variables:
+
+- `APP_NAME`
+- `APP_ENV`
+- `APP_VERSION`
 
 ## Tests
-
-Run unit tests:
 
 ```bash
 python -m unittest test_scoring.py
 ```
-
-~~~
-
-### Scoring inputs
-
-The model uses these categories:
-
-- procedural stage (0-25)
-- sponsor strength (0-10)
-- funding clarity (0-15)
-- route specificity (0-10)
-- need case / demand pull (0-10)
-- right-of-way tractability (0-10)
-- local-plan alignment (0-8)
-- opposition/environmental drag (0-7, subtracted)
-- land monetization fit (0-19)
-
-Final formula:
-
-`A + B + C + D + E + F + G + I - H`

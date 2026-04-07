@@ -1,1 +1,13 @@
-
+{
+  "project_id": "P-100",
+  "project_name": "North Corridor Expansion",
+  "procedural_stage": 20,
+  "sponsor_strength": 8,
+  "funding_clarity": 10,
+  "route_specificity": 8,
+  "need_case": 10,
+  "row_tractability": 7,
+  "local_plan_alignment": 6,
+  "opposition_drag": 2,
+  "land_monetization_fit": 12
+}
