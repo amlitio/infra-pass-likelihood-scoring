@@ -129,6 +129,16 @@ class AuthResponse(BaseModel):
     organization: OrganizationSummary
 
 
+class SessionSummary(BaseModel):
+    id: int
+    created_at: str
+    last_seen_at: str
+    expires_at: str
+    user_agent: Optional[str] = None
+    ip_address: Optional[str] = None
+    current: bool = False
+
+
 class ProjectCreateRequest(ScoreRequest):
     """Request to create a persistent project."""
 
@@ -218,3 +228,9 @@ class CsvImportResponse(BaseModel):
     created_projects: int
     average_score: float
     results: List[ProjectSummary]
+
+
+class RevokeSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: int

@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -27,8 +27,10 @@ from .schemas import (
     ProjectSummary,
     ProjectUpdateRequest,
     RegisterRequest,
+    RevokeSessionRequest,
     ScoreRequest,
     ScoreResponse,
+    SessionSummary,
     UserSummary,
 )
 from .service import build_score_response
@@ -58,17 +60,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_repository() -> ProjectRepository:
         return app.state.repository
 
+    def set_session_cookie(response: Response, token: str) -> None:
+        response.set_cookie(
+            key=settings.session_cookie_name,
+            value=token,
+            httponly=True,
+            secure=settings.session_cookie_secure,
+            samesite="lax",
+            max_age=settings.auth_token_ttl_hours * 3600,
+            path="/",
+        )
+
+    def clear_session_cookie(response: Response) -> None:
+        response.delete_cookie(key=settings.session_cookie_name, path="/")
+
+    def resolve_token(request: Request, authorization: str | None) -> str:
+        if authorization and authorization.lower().startswith("bearer "):
+            return authorization.split(" ", 1)[1].strip()
+        cookie_token = request.cookies.get(settings.session_cookie_name)
+        if cookie_token:
+            return cookie_token
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing session")
+
     def get_current_user(
+        request: Request,
         authorization: Annotated[str | None, Header()] = None,
         repo: ProjectRepository = Depends(get_repository),
     ) -> User:
-        if not authorization or not authorization.lower().startswith("bearer "):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")
-        token = authorization.split(" ", 1)[1].strip()
+        token = resolve_token(request, authorization)
         try:
             return repo.authenticate_token(token)
         except (LookupError, PermissionError) as error:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(error)) from error
+
+    def get_current_token(request: Request, authorization: Annotated[str | None, Header()] = None) -> str:
+        return resolve_token(request, authorization)
 
     def require_admin(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role != "admin":
@@ -105,28 +131,61 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "score-history",
                 "csv-import",
                 "organization-auth",
+                "managed-sessions",
                 "postgresql-ready",
                 "dashboard-ui",
             ],
         }
 
     @app.post("/v1/auth/register", response_model=AuthResponse, status_code=201)
-    def register(payload: RegisterRequest, repo: ProjectRepository = Depends(get_repository)) -> AuthResponse:
+    def register(
+        payload: RegisterRequest,
+        request: Request,
+        response: Response,
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> AuthResponse:
         if not settings.allow_open_registration:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="open registration is disabled")
         try:
-            return repo.register(payload)
+            auth_response = repo.register(
+                payload,
+                user_agent=request.headers.get("user-agent"),
+                ip_address=request.client.host if request.client else None,
+            )
+            set_session_cookie(response, auth_response.access_token)
+            return auth_response
         except ValueError as error:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
     @app.post("/v1/auth/login", response_model=AuthResponse)
-    def login(payload: LoginRequest, repo: ProjectRepository = Depends(get_repository)) -> AuthResponse:
+    def login(
+        payload: LoginRequest,
+        request: Request,
+        response: Response,
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> AuthResponse:
         try:
-            return repo.login(payload)
+            auth_response = repo.login(
+                payload,
+                user_agent=request.headers.get("user-agent"),
+                ip_address=request.client.host if request.client else None,
+            )
+            set_session_cookie(response, auth_response.access_token)
+            return auth_response
         except LookupError as error:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(error)) from error
         except PermissionError as error:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
+
+    @app.post("/v1/auth/logout", status_code=204)
+    def logout(
+        token: str = Depends(get_current_token),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> Response:
+        repo.revoke_token(token)
+        response = Response(status_code=204)
+        clear_session_cookie(response)
+        return response
 
     @app.get("/v1/auth/me", response_model=UserSummary)
     def auth_me(
@@ -134,6 +193,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         repo: ProjectRepository = Depends(get_repository),
     ) -> UserSummary:
         return repo.get_user(current_user.id)
+
+    @app.get("/v1/auth/sessions", response_model=list[SessionSummary])
+    def auth_sessions(
+        current_user: User = Depends(get_current_user),
+        token: str = Depends(get_current_token),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> list[SessionSummary]:
+        return repo.list_sessions(current_user.id, token)
+
+    @app.post("/v1/auth/sessions/revoke", status_code=204)
+    def revoke_session(
+        payload: RevokeSessionRequest,
+        current_user: User = Depends(get_current_user),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> Response:
+        try:
+            repo.revoke_session(current_user.id, payload)
+            return Response(status_code=204)
+        except LookupError as error:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
     @app.get("/v1/organizations/me", response_model=OrganizationSummary)
     def organization_me(

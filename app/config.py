@@ -19,6 +19,8 @@ class Settings:
     default_batch_actor: str = "system-import"
     auth_token_ttl_hours: int = 24
     allow_open_registration: bool = True
+    session_cookie_name: str = "iplp_session"
+    session_cookie_secure: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -33,6 +35,8 @@ class Settings:
             default_batch_actor=os.getenv("APP_DEFAULT_BATCH_ACTOR", cls.default_batch_actor),
             auth_token_ttl_hours=int(os.getenv("APP_AUTH_TOKEN_TTL_HOURS", str(cls.auth_token_ttl_hours))),
             allow_open_registration=os.getenv("APP_ALLOW_OPEN_REGISTRATION", "true").lower() == "true",
+            session_cookie_name=os.getenv("APP_SESSION_COOKIE_NAME", cls.session_cookie_name),
+            session_cookie_secure=os.getenv("APP_SESSION_COOKIE_SECURE", "false").lower() == "true",
         )
 
     @property

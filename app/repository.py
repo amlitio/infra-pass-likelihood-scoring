@@ -12,11 +12,11 @@ from pathlib import Path
 from typing import Iterator
 
 from sqlalchemy import create_engine, func, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from .auth import generate_access_token, hash_access_token, hash_password, token_expiry, utc_now, verify_password
 from .config import Settings
-from .models import AccessToken, Base, ImportJob, Organization, Project, ScoreRun, User
+from .models import Base, ImportJob, Organization, Project, ScoreRun, SessionToken, User
 from .schemas import (
     AuthResponse,
     CsvImportRequest,
@@ -30,8 +30,10 @@ from .schemas import (
     ProjectSummary,
     ProjectUpdateRequest,
     RegisterRequest,
+    RevokeSessionRequest,
     ScoreRequest,
     ScoreRunRecord,
+    SessionSummary,
     UserSummary,
 )
 from .service import build_score_response
@@ -68,25 +70,18 @@ class ProjectRepository:
         if not db_path.exists():
             return False
         with sqlite3.connect(db_path) as connection:
-            tables = {
-                row[0]
-                for row in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                ).fetchall()
-            }
+            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
             if "projects" not in tables:
                 return False
-            project_columns = {
-                row[1] for row in connection.execute("PRAGMA table_info(projects)").fetchall()
-            }
+            project_columns = {row[1] for row in connection.execute("PRAGMA table_info(projects)").fetchall()}
             if "organization_id" not in project_columns:
                 return True
             if "score_runs" in tables:
-                score_run_columns = {
-                    row[1] for row in connection.execute("PRAGMA table_info(score_runs)").fetchall()
-                }
+                score_run_columns = {row[1] for row in connection.execute("PRAGMA table_info(score_runs)").fetchall()}
                 if "project_id" not in score_run_columns or "breakdown" not in score_run_columns:
                     return True
+            if "sessions" not in tables:
+                return True
         return False
 
     def _reset_legacy_sqlite_db(self) -> None:
@@ -97,7 +92,18 @@ class ProjectRepository:
         backup_path = db_path.with_name(f"{db_path.stem}.legacy-{timestamp}{db_path.suffix}")
         self.engine.dispose()
         shutil.copy2(db_path, backup_path)
-        db_path.unlink()
+        with sqlite3.connect(db_path) as connection:
+            connection.executescript(
+                """
+                DROP TABLE IF EXISTS sessions;
+                DROP TABLE IF EXISTS access_tokens;
+                DROP TABLE IF EXISTS users;
+                DROP TABLE IF EXISTS organizations;
+                DROP TABLE IF EXISTS imports;
+                DROP TABLE IF EXISTS score_runs;
+                DROP TABLE IF EXISTS projects;
+                """
+            )
         self._build_engine()
 
     @contextmanager
@@ -138,6 +144,17 @@ class ProjectRepository:
             created_at=organization.created_at.isoformat(),
             member_count=int(member_count),
             project_count=int(project_count),
+        )
+
+    def _session_summary(self, session_token: SessionToken, current: bool = False) -> SessionSummary:
+        return SessionSummary(
+            id=session_token.id,
+            created_at=session_token.created_at.isoformat(),
+            last_seen_at=session_token.last_seen_at.isoformat(),
+            expires_at=session_token.expires_at.isoformat(),
+            user_agent=session_token.user_agent,
+            ip_address=session_token.ip_address,
+            current=current,
         )
 
     def _latest_score_run(self, project: Project) -> ScoreRun:
@@ -207,7 +224,32 @@ class ProjectRepository:
             created_at=utc_now(),
         )
 
-    def register(self, payload: RegisterRequest) -> AuthResponse:
+    def _create_session(
+        self,
+        session: Session,
+        user: User,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+    ) -> tuple[str, SessionToken]:
+        token_value = generate_access_token()
+        token = SessionToken(
+            user=user,
+            token_hash=hash_access_token(token_value),
+            expires_at=token_expiry(self.settings.auth_token_ttl_hours),
+            last_seen_at=utc_now(),
+            user_agent=(user_agent or "")[:255] or None,
+            ip_address=(ip_address or "")[:64] or None,
+        )
+        session.add(token)
+        session.flush()
+        return token_value, token
+
+    def register(
+        self,
+        payload: RegisterRequest,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+    ) -> AuthResponse:
         with self.session() as session:
             if session.scalar(select(User).where(User.email == payload.email)) is not None:
                 raise ValueError("email is already registered")
@@ -225,36 +267,26 @@ class ProjectRepository:
             )
             session.add_all([organization, user])
             session.flush()
-            token_value = generate_access_token()
-            token = AccessToken(
-                user=user,
-                token_hash=hash_access_token(token_value),
-                expires_at=token_expiry(self.settings.auth_token_ttl_hours),
-            )
-            session.add(token)
-            session.flush()
+            token_value, _ = self._create_session(session, user, user_agent=user_agent, ip_address=ip_address)
             return AuthResponse(
                 access_token=token_value,
                 user=self._user_summary(user),
                 organization=self._organization_summary(session, organization),
             )
 
-    def login(self, payload: LoginRequest) -> AuthResponse:
+    def login(
+        self,
+        payload: LoginRequest,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+    ) -> AuthResponse:
         with self.session() as session:
             user = session.scalar(select(User).where(User.email == payload.email))
             if user is None or not verify_password(payload.password, user.password_hash):
                 raise LookupError("invalid credentials")
             if not user.is_active:
                 raise PermissionError("user is inactive")
-            token_value = generate_access_token()
-            session.add(
-                AccessToken(
-                    user=user,
-                    token_hash=hash_access_token(token_value),
-                    expires_at=token_expiry(self.settings.auth_token_ttl_hours),
-                )
-            )
-            session.flush()
+            token_value, _ = self._create_session(session, user, user_agent=user_agent, ip_address=ip_address)
             return AuthResponse(
                 access_token=token_value,
                 user=self._user_summary(user),
@@ -264,15 +296,50 @@ class ProjectRepository:
     def authenticate_token(self, token: str) -> User:
         with self.session() as session:
             token_row = session.scalar(
-                select(AccessToken).where(AccessToken.token_hash == hash_access_token(token))
+                select(SessionToken)
+                .options(selectinload(SessionToken.user))
+                .where(SessionToken.token_hash == hash_access_token(token))
             )
             if token_row is None or token_row.expires_at <= utc_now():
                 raise LookupError("invalid or expired token")
             user = token_row.user
             if not user.is_active:
                 raise PermissionError("user is inactive")
+            token_row.last_seen_at = utc_now()
+            session.flush()
             session.expunge(user)
             return user
+
+    def list_sessions(self, user_id: int, current_token: str | None = None) -> list[SessionSummary]:
+        current_hash = hash_access_token(current_token) if current_token else None
+        with self.session() as session:
+            sessions = session.scalars(
+                select(SessionToken)
+                .where(SessionToken.user_id == user_id)
+                .order_by(SessionToken.created_at.desc(), SessionToken.id.desc())
+            ).all()
+            return [
+                self._session_summary(session_token, current=(session_token.token_hash == current_hash))
+                for session_token in sessions
+                if session_token.expires_at > utc_now()
+            ]
+
+    def revoke_session(self, user_id: int, payload: RevokeSessionRequest) -> None:
+        with self.session() as session:
+            session_token = session.scalar(
+                select(SessionToken).where(SessionToken.id == payload.session_id, SessionToken.user_id == user_id)
+            )
+            if session_token is None:
+                raise LookupError("session not found")
+            session.delete(session_token)
+
+    def revoke_token(self, token: str) -> None:
+        with self.session() as session:
+            session_token = session.scalar(
+                select(SessionToken).where(SessionToken.token_hash == hash_access_token(token))
+            )
+            if session_token is not None:
+                session.delete(session_token)
 
     def get_user(self, user_id: int) -> UserSummary:
         with self.session() as session:
@@ -404,14 +471,21 @@ class ProjectRepository:
     def list_projects(self, organization_id: int) -> list[ProjectSummary]:
         with self.session() as session:
             projects = session.scalars(
-                select(Project).where(Project.organization_id == organization_id).order_by(Project.updated_at.desc(), Project.id.desc())
+                select(Project)
+                .options(selectinload(Project.score_runs))
+                .where(Project.organization_id == organization_id)
+                .order_by(Project.updated_at.desc(), Project.id.desc())
             ).all()
             return [self._project_summary(project) for project in projects]
 
     def get_project(self, organization_id: int, project_id: int) -> ProjectDetail:
         with self.session() as session:
-            project = session.get(Project, project_id)
-            if project is None or project.organization_id != organization_id:
+            project = session.scalar(
+                select(Project)
+                .options(selectinload(Project.score_runs))
+                .where(Project.id == project_id, Project.organization_id == organization_id)
+            )
+            if project is None:
                 raise LookupError(f"project {project_id} not found")
             return self._project_detail(project)
 

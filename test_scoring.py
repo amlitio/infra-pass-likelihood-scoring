@@ -29,8 +29,10 @@ class ScoringTests(unittest.TestCase):
         self.client.__enter__()
 
     def tearDown(self):
-        self.client.app.state.repository.engine.dispose()
-        self.client.__exit__(None, None, None)
+        if hasattr(self.client, "app"):
+            self.client.app.state.repository.engine.dispose()
+        if hasattr(self.client, "exit_stack"):
+            self.client.__exit__(None, None, None)
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def register_org(self, organization_name="Atlas Infra", email="admin@example.com"):
@@ -189,6 +191,36 @@ class ScoringTests(unittest.TestCase):
         me = self.client.get("/v1/auth/me", headers=self.auth_headers(login.json()["access_token"]))
         self.assertEqual(me.status_code, 200)
         self.assertEqual(me.json()["email"], registered["user"]["email"])
+
+    def test_cookie_session_auth_and_logout(self):
+        self.register_org()
+        me = self.client.get("/v1/auth/me")
+        self.assertEqual(me.status_code, 200)
+        logout = self.client.post("/v1/auth/logout")
+        self.assertEqual(logout.status_code, 204)
+        denied = self.client.get("/v1/auth/me")
+        self.assertEqual(denied.status_code, 401)
+
+    def test_session_listing_and_revocation(self):
+        registered = self.register_org()
+        first_token = registered["access_token"]
+        second = self.client.post(
+            "/v1/auth/login",
+            json={"email": "admin@example.com", "password": "supersecure"},
+        )
+        second_token = second.json()["access_token"]
+        sessions = self.client.get("/v1/auth/sessions", headers=self.auth_headers(second_token))
+        self.assertEqual(sessions.status_code, 200)
+        self.assertGreaterEqual(len(sessions.json()), 2)
+        to_revoke = next(session for session in sessions.json() if session["id"] and not session["current"])
+        revoked = self.client.post(
+            "/v1/auth/sessions/revoke",
+            headers=self.auth_headers(second_token),
+            json={"session_id": to_revoke["id"]},
+        )
+        self.assertEqual(revoked.status_code, 204)
+        invalidated = self.client.get("/v1/auth/me", headers=self.auth_headers(first_token))
+        self.assertEqual(invalidated.status_code, 401)
 
     def test_protected_endpoints_require_auth(self):
         response = self.client.get("/v1/projects")

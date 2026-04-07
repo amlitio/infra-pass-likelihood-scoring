@@ -1,137 +1,120 @@
 # Infrastructure Pass Likelihood Platform
 
-Phase 2 turns the scoring platform into a multi-organization application with authentication, PostgreSQL support, and deployment packaging. The original CLI and stateless scoring endpoints still work, but the persistent workflows are now protected by bearer-token auth and scoped to an organization.
+The app is now on a more production-shaped Phase 3 foundation:
 
-## What Phase 2 adds
+- Alembic migrations for schema versioning
+- Stronger auth with managed sessions, cookie support, logout, and session revocation
+- CI and smoke checks for migrations, tests, and container builds
+- A modular frontend foundation under `app/static/js/`
 
-- Organization registration and user login
-- Token-based auth for persistent workflows
-- Admin-managed teammate creation
-- Organization-scoped projects, imports, and score history
-- Database abstraction for SQLite and PostgreSQL
-- Docker and Docker Compose packaging for local or hosted deployment
-- Updated dashboard with register, login, and org-aware operations
+## What changed
 
-## Architecture
+### 1. Alembic migrations
 
-- `app/auth.py`: password hashing, token generation, expiry
-- `app/models.py`: SQLAlchemy models for organizations, users, projects, score runs, and imports
-- `app/repository.py`: shared persistence layer for SQLite and PostgreSQL
-- `app/main.py`: auth, organization, portfolio, and scoring endpoints
-- `app/static/`: zero-build dashboard with auth-aware workflow
-- `Dockerfile`: production app container
-- `docker-compose.yml`: app + PostgreSQL local stack
+- `alembic.ini`
+- `alembic/env.py`
+- `alembic/versions/20260407_0001_initial_schema.py`
 
-## Local run
-
-Git Bash one-liner:
+Run migrations manually:
 
 ```bash
-python -m venv .venv && source .venv/Scripts/activate && python -m pip install --upgrade pip && pip install -r requirements.txt && uvicorn app.main:app --reload
+alembic upgrade head
 ```
 
-Then open:
+### 2. Stronger auth and session flows
 
-- `http://127.0.0.1:8000/`
-- `http://127.0.0.1:8000/docs`
+The app now supports:
 
-## Docker run
+- cookie-backed auth for the web UI
+- bearer token auth for API clients
+- `POST /v1/auth/logout`
+- `GET /v1/auth/sessions`
+- `POST /v1/auth/sessions/revoke`
 
-```bash
-docker compose up --build
-```
-
-This starts:
-
-- API + dashboard on `http://127.0.0.1:8000`
-- PostgreSQL on `localhost:5432`
-
-## Configuration
-
-Use `.env.example` as the starting point.
-
-- `APP_NAME`
-- `APP_ENV`
-- `APP_VERSION`
-- `APP_DATA_DIR`
-- `APP_DATABASE_URL`
-- `APP_AUTH_TOKEN_TTL_HOURS`
-- `APP_ALLOW_OPEN_REGISTRATION`
-
-### Database examples
-
-SQLite:
-
-```text
-sqlite:///data/infra_scoring.db
-```
-
-PostgreSQL:
-
-```text
-postgresql+psycopg://postgres:postgres@db:5432/infra_scoring
-```
-
-## API overview
-
-### Public endpoints
-
-- `GET /health/live`
-- `GET /health/ready`
-- `GET /v1/metadata`
-- `POST /v1/score`
-- `POST /v1/score/batch`
-
-### Auth endpoints
-
-- `POST /v1/auth/register`
-- `POST /v1/auth/login`
-- `GET /v1/auth/me`
-
-### Organization endpoints
-
-- `GET /v1/organizations/me`
-- `GET /v1/organizations/me/users`
-- `POST /v1/organizations/me/users`
-
-### Protected portfolio endpoints
-
-- `GET /v1/portfolio`
-- `GET /v1/projects`
-- `POST /v1/projects`
-- `GET /v1/projects/{project_pk}`
-- `PUT /v1/projects/{project_pk}`
-- `POST /v1/projects/{project_pk}/rescore`
-- `POST /v1/imports/csv`
-
-All protected routes require:
+Protected routes accept either:
 
 ```text
 Authorization: Bearer <access_token>
 ```
 
-## Register flow example
+or the managed session cookie set by login/register.
 
-```json
-{
-  "organization_name": "Atlas Infrastructure",
-  "organization_slug": "atlas-infrastructure",
-  "email": "admin@atlas.example",
-  "password": "supersecure",
-  "full_name": "Avery Analyst"
-}
+### 3. CI and production checks
+
+Added:
+
+- `.github/workflows/ci.yml`
+- `scripts/smoke_check.py`
+
+CI now:
+
+- installs dependencies
+- runs `alembic upgrade head`
+- runs the unit suite
+- runs an app startup smoke check
+- builds the Docker image
+
+### 4. Frontend foundation migration
+
+The dashboard script is now modular:
+
+- `app/static/js/api.js`
+- `app/static/js/auth.js`
+- `app/static/js/dom.js`
+- `app/static/js/main.js`
+- `app/static/js/state.js`
+- `app/static/js/workspace.js`
+
+That gives us a cleaner base for future UI work without introducing a JS build system yet.
+
+## Local development
+
+```bash
+python -m venv .venv && source .venv/Scripts/activate && python -m pip install --upgrade pip && pip install -r requirements.txt
+alembic upgrade head
+uvicorn app.main:app --reload
 ```
 
-## Tests
+Open:
+
+- `http://127.0.0.1:8000/`
+- `http://127.0.0.1:8000/docs`
+
+## Docker
+
+```bash
+docker compose up --build
+```
+
+The container entrypoint now runs migrations before starting Uvicorn.
+
+## Config
+
+Key environment variables:
+
+- `APP_DATABASE_URL`
+- `APP_AUTH_TOKEN_TTL_HOURS`
+- `APP_ALLOW_OPEN_REGISTRATION`
+- `APP_SESSION_COOKIE_NAME`
+- `APP_SESSION_COOKIE_SECURE`
+
+Example values live in `.env.example`.
+
+## Test and smoke checks
 
 ```bash
 python -m unittest test_scoring.py
+python scripts/smoke_check.py
 ```
 
-## Next logical Phase 3
+## Current production gaps
 
-- SSO and external identity providers
-- Audit log browsing and revocable sessions
-- Background jobs and async imports
-- Search, saved views, and reporting exports
-- Managed migrations and rollout automation
+This is a much stronger base, but it is not yet “finished enterprise production.” The next meaningful steps would be:
+
+- real migration chaining for future schema changes
+- RBAC expansion beyond `admin` vs `analyst`
+- password reset and email verification
+- audit log APIs and session analytics
+- background workers for imports
+- a full frontend app build pipeline
+- observability and alerting integration
