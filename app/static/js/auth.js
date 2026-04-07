@@ -1,5 +1,5 @@
 import { fetchJson, formToJson } from "./api.js";
-import { el, setText } from "./dom.js";
+import { el, setStatus, setText } from "./dom.js";
 import { state } from "./state.js";
 
 export function setAuthenticatedUi() {
@@ -27,7 +27,7 @@ export function clearSessionUi() {
 export async function handleRegister(event, onAuthenticated) {
   event.preventDefault();
   const status = el("register-status");
-  status.textContent = "Creating organization...";
+  setStatus("register-status", "Creating organization...");
   try {
     const authPayload = await fetchJson("/v1/auth/register", {
       method: "POST",
@@ -36,18 +36,18 @@ export async function handleRegister(event, onAuthenticated) {
     state.user = authPayload.user;
     state.organization = authPayload.organization;
     setAuthenticatedUi();
-    status.textContent = `Registered ${authPayload.organization.name}.`;
+    setStatus("register-status", `Registered ${authPayload.organization.name}.`);
     event.target.reset();
     await onAuthenticated();
   } catch (error) {
-    status.textContent = error.message;
+    setStatus("register-status", error.message, "error");
   }
 }
 
 export async function handleLogin(event, onAuthenticated) {
   event.preventDefault();
   const status = el("login-status");
-  status.textContent = "Signing in...";
+  setStatus("login-status", "Signing in...");
   try {
     const authPayload = await fetchJson("/v1/auth/login", {
       method: "POST",
@@ -56,11 +56,11 @@ export async function handleLogin(event, onAuthenticated) {
     state.user = authPayload.user;
     state.organization = authPayload.organization;
     setAuthenticatedUi();
-    status.textContent = `Signed in to ${authPayload.organization.name}.`;
+    setStatus("login-status", `Signed in to ${authPayload.organization.name}.`);
     event.target.reset();
     await onAuthenticated();
   } catch (error) {
-    status.textContent = error.message;
+    setStatus("login-status", error.message, "error");
   }
 }
 

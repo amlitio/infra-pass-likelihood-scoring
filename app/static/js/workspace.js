@@ -1,5 +1,5 @@
 import { fetchJson, formToJson } from "./api.js";
-import { el, setText } from "./dom.js";
+import { el, setStatus, setText } from "./dom.js";
 import { state } from "./state.js";
 import { clearSessionUi, setAuthenticatedUi } from "./auth.js";
 
@@ -21,7 +21,7 @@ function renderProjects(projects, onSelect) {
       <div class="project-meta">
         <span>${project.sector || "Unassigned sector"}</span>
         <span>${project.region || "Unknown region"}</span>
-        <span>Score ${project.latest_score}</span>
+        <span class="score-chip">Score ${project.latest_score}</span>
         <span>${project.latest_interpretation}</span>
       </div>
     </article>
@@ -54,7 +54,7 @@ function renderDetail(project, onRescore) {
         <h3>${project.project_name}</h3>
         <p class="lede">${project.notes || "No notes recorded."}</p>
       </div>
-      <div>
+      <div class="score-copy">
         <div class="score-number">${project.latest_score}</div>
         <div>${project.latest_interpretation}</div>
       </div>
@@ -112,57 +112,57 @@ export async function refreshWorkspace() {
     }
   } catch (error) {
     clearSessionUi();
-    setText("login-status", error.message);
+    setStatus("login-status", error.message, "error");
   }
 }
 
 export async function handleProjectSubmit(event) {
   event.preventDefault();
   const status = el("project-status");
-  status.textContent = "Creating project...";
+  setStatus("project-status", "Creating project...");
   try {
     const project = await fetchJson("/v1/projects", {
       method: "POST",
       body: JSON.stringify(formToJson(event.target)),
     });
-    status.textContent = `Saved ${project.project_name} with score ${project.latest_score}.`;
+    setStatus("project-status", `Saved ${project.project_name} with score ${project.latest_score}.`);
     event.target.reset();
     state.selectedProjectId = project.id;
     await refreshWorkspace();
   } catch (error) {
-    status.textContent = error.message;
+    setStatus("project-status", error.message, "error");
   }
 }
 
 export async function handleMemberSubmit(event) {
   event.preventDefault();
   const status = el("member-status");
-  status.textContent = "Adding member...";
+  setStatus("member-status", "Adding member...");
   try {
     const member = await fetchJson("/v1/organizations/me/users", {
       method: "POST",
       body: JSON.stringify(formToJson(event.target)),
     });
-    status.textContent = `Added ${member.full_name}.`;
+    setStatus("member-status", `Added ${member.full_name}.`);
     event.target.reset();
   } catch (error) {
-    status.textContent = error.message;
+    setStatus("member-status", error.message, "error");
   }
 }
 
 export async function handleImportSubmit(event) {
   event.preventDefault();
   const status = el("import-status");
-  status.textContent = "Importing portfolio...";
+  setStatus("import-status", "Importing portfolio...");
   try {
     const result = await fetchJson("/v1/imports/csv", {
       method: "POST",
       body: JSON.stringify(formToJson(event.target)),
     });
-    status.textContent = `Imported ${result.created_projects} projects from ${result.filename}.`;
+    setStatus("import-status", `Imported ${result.created_projects} projects from ${result.filename}.`);
     state.selectedProjectId = result.results[0]?.id || null;
     await refreshWorkspace();
   } catch (error) {
-    status.textContent = error.message;
+    setStatus("import-status", error.message, "error");
   }
 }

@@ -20,6 +20,27 @@ export function formToJson(form) {
   return json;
 }
 
+function formatDetail(detail) {
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+        if (item && typeof item === "object") {
+          const path = Array.isArray(item.loc) ? item.loc.join(" > ") : "field";
+          return `${path}: ${item.msg || JSON.stringify(item)}`;
+        }
+        return String(item);
+      })
+      .join(" | ");
+  }
+  if (detail && typeof detail === "object") {
+    return detail.message || JSON.stringify(detail);
+  }
+  return detail || "Request failed";
+}
+
 export async function fetchJson(url, options = {}) {
   const headers = new Headers(options.headers || {});
   if (!headers.has("Content-Type") && options.body) {
@@ -34,7 +55,7 @@ export async function fetchJson(url, options = {}) {
     payload = { detail: raw || "Request failed" };
   }
   if (!response.ok) {
-    throw new Error(payload.detail || "Request failed");
+    throw new Error(formatDetail(payload.detail));
   }
   return payload;
 }

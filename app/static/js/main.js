@@ -1,4 +1,4 @@
-import { el } from "./dom.js";
+import { el, setStatus } from "./dom.js";
 import { clearSessionUi, handleLogin, handleLogout, handleRegister } from "./auth.js";
 import { handleImportSubmit, handleMemberSubmit, handleProjectSubmit, refreshWorkspace } from "./workspace.js";
 
@@ -12,7 +12,7 @@ el("logout-button").addEventListener("click", async () => {
     await handleLogout();
   } catch (error) {
     clearSessionUi();
-    el("login-status").textContent = error.message;
+    setStatus("login-status", error.message, "error");
   }
 });
 
