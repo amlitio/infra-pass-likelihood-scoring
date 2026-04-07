@@ -1,46 +1,56 @@
 # Infrastructure Pass Likelihood Platform
 
-This project is now structured as an enterprise-ready scoring service for infrastructure proposal evaluation. It keeps the original CLI workflow, while adding a production-oriented application package, HTTP API, health probes, configuration, and batch scoring support.
+Phase 1 turns the original scoring utility into a working product surface: an API, a browser-based portfolio dashboard, persistent project records, score history, and CSV batch intake. The original CLI is still supported for quick local scoring.
 
-## What is included
+## Phase 1 buildout
 
-- Reusable domain and service layers in `app/`
-- Backward-compatible CLI entry point in `scoring.py`
-- FastAPI service with OpenAPI docs
-- Single-project and batch scoring endpoints
-- Liveness and readiness endpoints for deployment environments
-- Expanded automated tests for CLI and API behavior
+- Persistent SQLite-backed project registry and score-run audit trail
+- Portfolio dashboard at `/` for operators and analysts
+- Project create, update, list, detail, and rescore workflows
+- CSV import endpoint for batch portfolio creation
+- Stateless scoring endpoints preserved for simple integrations
+- Liveness, readiness, and metadata endpoints for deployment environments
 
 ## Architecture
 
-- `app/domain.py`: validated scoring inputs and domain constants
-- `app/service.py`: scoring, interpretation, and utilization logic
-- `app/schemas.py`: request and response contracts
-- `app/main.py`: FastAPI app and endpoints
-- `app/config.py`: environment-driven runtime settings
-- `app/cli.py`: command-line experience
+- `app/domain.py`: validated scoring inputs and score boundaries
+- `app/service.py`: scoring, interpretation, and normalization logic
+- `app/repository.py`: SQLite persistence for projects, score history, and imports
+- `app/schemas.py`: API contracts and persistent record models
+- `app/main.py`: app factory, routes, and startup initialization
+- `app/static/`: zero-build dashboard UI
+- `app/cli.py`: backward-compatible CLI entry point
 
-## Install
+## One-command Git Bash setup
+
+API server:
+
+```bash
+python -m venv .venv && source .venv/Scripts/activate && python -m pip install --upgrade pip && pip install -r requirements.txt && uvicorn app.main:app --reload
+```
+
+CLI demo:
+
+```bash
+python -m venv .venv && source .venv/Scripts/activate && python -m pip install --upgrade pip && pip install -r requirements.txt && python scoring.py --demo
+```
+
+## Run surfaces manually
+
+Install:
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-## Run the CLI
+CLI:
 
 ```bash
 python scoring.py --demo
-```
-
-```bash
-python scoring.py --procedural-stage 20 --sponsor-strength 9 --funding-clarity 12 --route-specificity 10 --need-case 10 --row-tractability 7 --local-plan-alignment 6 --opposition-drag 2 --land-monetization-fit 14
-```
-
-```bash
 python scoring.py --input-json project.json
 ```
 
-## Run the API
+API and dashboard:
 
 ```bash
 uvicorn app.main:app --reload
@@ -48,56 +58,61 @@ uvicorn app.main:app --reload
 
 Open:
 
+- `http://127.0.0.1:8000/`
 - `http://127.0.0.1:8000/docs`
 - `http://127.0.0.1:8000/redoc`
 
-## API endpoints
+## API overview
 
-### `POST /v1/score`
+### Stateless scoring
 
-Scores a single project.
+- `POST /v1/score`
+- `POST /v1/score/batch`
 
-Example payload:
+### Persistent project workflows
 
-```json
-{
-  "project_id": "P-100",
-  "project_name": "North Corridor Expansion",
-  "procedural_stage": 20,
-  "sponsor_strength": 8,
-  "funding_clarity": 10,
-  "route_specificity": 8,
-  "need_case": 10,
-  "row_tractability": 7,
-  "local_plan_alignment": 6,
-  "opposition_drag": 2,
-  "land_monetization_fit": 12
-}
+- `GET /v1/portfolio`
+- `GET /v1/projects`
+- `POST /v1/projects`
+- `GET /v1/projects/{project_pk}`
+- `PUT /v1/projects/{project_pk}`
+- `POST /v1/projects/{project_pk}/rescore`
+
+### Batch intake
+
+- `POST /v1/imports/csv`
+
+Expected CSV headers:
+
+```text
+project_id,project_name,sponsor_organization,sector,region,notes,procedural_stage,sponsor_strength,funding_clarity,route_specificity,need_case,row_tractability,local_plan_alignment,opposition_drag,land_monetization_fit
 ```
 
-### `POST /v1/score/batch`
+### Ops endpoints
 
-Scores up to 500 projects in one request and returns summary statistics.
-
-### `GET /health/live`
-
-Basic liveness probe.
-
-### `GET /health/ready`
-
-Readiness probe with environment and version details.
-
-### `GET /v1/metadata`
-
-Service metadata and capabilities.
+- `GET /health/live`
+- `GET /health/ready`
+- `GET /v1/metadata`
 
 ## Configuration
 
-The service reads these optional environment variables:
+Optional environment variables:
 
 - `APP_NAME`
 - `APP_ENV`
 - `APP_VERSION`
+- `APP_DATA_DIR`
+- `APP_DATABASE_PATH`
+- `APP_DEFAULT_BATCH_ACTOR`
+
+## Phase 2 candidate backlog
+
+- Organization and user accounts with role-based access
+- PostgreSQL migration path for multi-user deployment
+- Saved filters, search, and portfolio segmentation
+- Rich import/export workflows for Excel and BI tooling
+- Model versioning and configurable weights
+- CI, Docker, and deployment manifests
 
 ## Tests
 

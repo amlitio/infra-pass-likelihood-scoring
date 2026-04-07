@@ -7,16 +7,13 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from .domain import ProjectSignals
-from .service import category_utilization, interpret_score, score_breakdown, score_project
 
 
-class ScoreRequest(BaseModel):
-    """Single project scoring request."""
+class SignalFields(BaseModel):
+    """Shared scoring signal inputs."""
 
     model_config = ConfigDict(extra="forbid")
 
-    project_id: Optional[str] = Field(default=None, description="External identifier for the project")
-    project_name: Optional[str] = Field(default=None, description="Human-friendly project name")
     procedural_stage: int = Field(ge=0, le=25)
     sponsor_strength: int = Field(ge=0, le=10)
     funding_clarity: int = Field(ge=0, le=15)
@@ -41,6 +38,17 @@ class ScoreRequest(BaseModel):
         )
 
 
+class ScoreRequest(SignalFields):
+    """Single project scoring request."""
+
+    project_id: Optional[str] = Field(default=None, description="External identifier for the project")
+    project_name: Optional[str] = Field(default=None, description="Human-friendly project name")
+    sponsor_organization: Optional[str] = None
+    sector: Optional[str] = None
+    region: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class ScoreResponse(BaseModel):
     """Single project scoring response."""
 
@@ -50,19 +58,6 @@ class ScoreResponse(BaseModel):
     interpretation: str
     breakdown: Dict[str, int]
     utilization: Dict[str, float]
-
-    @classmethod
-    def from_request(cls, request: ScoreRequest) -> "ScoreResponse":
-        signals = request.to_signals()
-        total = score_project(signals)
-        return cls(
-            project_id=request.project_id,
-            project_name=request.project_name,
-            score=total,
-            interpretation=interpret_score(total),
-            breakdown=score_breakdown(signals),
-            utilization=category_utilization(signals),
-        )
 
 
 class BatchScoreRequest(BaseModel):
@@ -81,3 +76,92 @@ class BatchScoreResponse(BaseModel):
     highest_score: int
     lowest_score: int
     results: List[ScoreResponse]
+
+
+class ProjectCreateRequest(ScoreRequest):
+    """Request to create a persistent project."""
+
+    project_name: str = Field(min_length=1)
+
+
+class ProjectUpdateRequest(ScoreRequest):
+    """Request to update a persistent project."""
+
+    project_name: str = Field(min_length=1)
+
+
+class ScoreRunRecord(BaseModel):
+    """Persistent score run metadata."""
+
+    id: int
+    project_pk: int
+    score: int
+    interpretation: str
+    breakdown: Dict[str, int]
+    utilization: Dict[str, float]
+    triggered_by: str
+    created_at: str
+
+
+class ProjectSummary(BaseModel):
+    """Project summary with current scoring state."""
+
+    id: int
+    project_id: Optional[str] = None
+    project_name: str
+    sponsor_organization: Optional[str] = None
+    sector: Optional[str] = None
+    region: Optional[str] = None
+    notes: Optional[str] = None
+    procedural_stage: int
+    sponsor_strength: int
+    funding_clarity: int
+    route_specificity: int
+    need_case: int
+    row_tractability: int
+    local_plan_alignment: int
+    opposition_drag: int
+    land_monetization_fit: int
+    latest_score: int
+    latest_interpretation: str
+    created_at: str
+    updated_at: str
+
+
+class ProjectDetail(ProjectSummary):
+    """Project detail including history."""
+
+    latest_breakdown: Dict[str, int]
+    latest_utilization: Dict[str, float]
+    score_history: List[ScoreRunRecord]
+
+
+class PortfolioSummary(BaseModel):
+    """Top-level dashboard metrics."""
+
+    total_projects: int
+    average_score: float
+    high_priority_projects: int
+    recent_scores: int
+    top_project: Optional[ProjectSummary] = None
+
+
+class CsvImportRequest(BaseModel):
+    """Request body for CSV ingestion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str = "batch-import.csv"
+    csv_content: str = Field(min_length=1)
+    triggered_by: Optional[str] = None
+
+
+class CsvImportResponse(BaseModel):
+    """CSV ingestion result."""
+
+    import_id: int
+    filename: str
+    total_projects: int
+    created_projects: int
+    average_score: float
+    results: List[ProjectSummary]

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Infrastructure Pass Likelihood Platform</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <div>
+        <p class="eyebrow">Phase 1 Control Surface</p>
+        <h1>Infrastructure Pass Likelihood Platform</h1>
+        <p class="lede">A working portfolio workspace for analysts tracking project quality, score movement, and batch intake.</p>
+      </div>
+      <div class="rail-block">
+        <p class="rail-label">Visual thesis</p>
+        <p>Editorial command center with transit-map energy, restrained color, and dense operational signal.</p>
+      </div>
+      <div class="rail-block">
+        <p class="rail-label">Interaction thesis</p>
+        <p>Fast status refresh, crisp detail swaps, and subtle reveal motion as the workspace updates.</p>
+      </div>
+      <a class="docs-link" href="/docs" target="_blank" rel="noreferrer">Open API docs</a>
+    </aside>
+
+    <main class="workspace">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Portfolio Overview</p>
+          <h2>Operate a scoring pipeline, not just a calculator.</h2>
+          <p class="lede">Create projects, track rescoring history, import portfolios from CSV, and review the highest-confidence opportunities in one workspace.</p>
+        </div>
+        <div class="kpi-grid">
+          <div>
+            <span>Total projects</span>
+            <strong id="kpi-total">0</strong>
+          </div>
+          <div>
+            <span>Average score</span>
+            <strong id="kpi-average">0</strong>
+          </div>
+          <div>
+            <span>High priority</span>
+            <strong id="kpi-priority">0</strong>
+          </div>
+          <div>
+            <span>Recent score events</span>
+            <strong id="kpi-recent">0</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <section class="pane">
+          <div class="pane-header">
+            <h3>Create project</h3>
+            <p>Persist a new candidate and generate an auditable first score.</p>
+          </div>
+          <form id="project-form" class="project-form">
+            <div class="field-row">
+              <label>Project name<input name="project_name" required></label>
+              <label>Project ID<input name="project_id"></label>
+            </div>
+            <div class="field-row">
+              <label>Sponsor<input name="sponsor_organization"></label>
+              <label>Sector<input name="sector" placeholder="Transmission, rail, water"></label>
+            </div>
+            <div class="field-row">
+              <label>Region<input name="region"></label>
+              <label>Notes<input name="notes"></label>
+            </div>
+            <div class="signal-grid">
+              <label>Procedural stage<input type="number" name="procedural_stage" min="0" max="25" value="20" required></label>
+              <label>Sponsor strength<input type="number" name="sponsor_strength" min="0" max="10" value="8" required></label>
+              <label>Funding clarity<input type="number" name="funding_clarity" min="0" max="15" value="10" required></label>
+              <label>Route specificity<input type="number" name="route_specificity" min="0" max="10" value="8" required></label>
+              <label>Need case<input type="number" name="need_case" min="0" max="10" value="10" required></label>
+              <label>ROW tractability<input type="number" name="row_tractability" min="0" max="10" value="7" required></label>
+              <label>Local plan alignment<input type="number" name="local_plan_alignment" min="0" max="8" value="6" required></label>
+              <label>Opposition drag<input type="number" name="opposition_drag" min="0" max="7" value="2" required></label>
+              <label>Land monetization fit<input type="number" name="land_monetization_fit" min="0" max="19" value="12" required></label>
+            </div>
+            <button type="submit">Create and score</button>
+          </form>
+          <p class="status" id="project-status"></p>
+        </section>
+
+        <section class="pane">
+          <div class="pane-header">
+            <h3>CSV intake</h3>
+            <p>Paste a CSV with the same field names as the API to bulk-create projects.</p>
+          </div>
+          <form id="import-form" class="import-form">
+            <label>Filename<input name="filename" value="portfolio-import.csv"></label>
+            <label>CSV content<textarea name="csv_content" rows="12" spellcheck="false">project_id,project_name,sponsor_organization,sector,region,notes,procedural_stage,sponsor_strength,funding_clarity,route_specificity,need_case,row_tractability,local_plan_alignment,opposition_drag,land_monetization_fit
+P-200,Western Link,Atlas Infrastructure,Transmission,CA,Priority corridor,18,8,11,8,9,6,5,2,13
+P-201,South Basin Waterline,Civic Water Authority,Water,NV,Expansion phase,14,7,9,7,8,6,6,1,11</textarea></label>
+            <button type="submit">Import portfolio</button>
+          </form>
+          <p class="status" id="import-status"></p>
+        </section>
+      </section>
+
+      <section class="lower-grid">
+        <section class="pane">
+          <div class="pane-header">
+            <h3>Projects</h3>
+            <p>Newest updates surface first. Selecting a row loads score history and current rationale.</p>
+          </div>
+          <div id="project-list" class="project-list"></div>
+        </section>
+
+        <section class="pane detail-pane">
+          <div class="pane-header">
+            <h3>Selected project</h3>
+            <p>Review the latest score, breakdown, and history. Use rescore to record a new run.</p>
+          </div>
+          <div id="project-detail" class="project-detail empty-state">Select a project to inspect its scoring history.</div>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -6,6 +6,7 @@ from dataclasses import asdict
 from typing import Dict
 
 from .domain import CATEGORY_MAXIMA, ProjectSignals
+from .schemas import ScoreRequest, ScoreResponse
 
 
 def score_breakdown(signals: ProjectSignals) -> Dict[str, int]:
@@ -47,3 +48,18 @@ def category_utilization(signals: ProjectSignals) -> Dict[str, float]:
         name: round((value / CATEGORY_MAXIMA[name]) * 100, 2)
         for name, value in values.items()
     }
+
+
+def build_score_response(request: ScoreRequest) -> ScoreResponse:
+    """Score a request and return a normalized response object."""
+
+    signals = request.to_signals()
+    total = score_project(signals)
+    return ScoreResponse(
+        project_id=request.project_id,
+        project_name=request.project_name,
+        score=total,
+        interpretation=interpret_score(total),
+        breakdown=score_breakdown(signals),
+        utilization=category_utilization(signals),
+    )

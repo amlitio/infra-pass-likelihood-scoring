@@ -1,17 +1,34 @@
 import json
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.config import Settings
+from app.main import create_app
 from scoring import ProjectSignals, interpret_score, project_signals_from_dict, score_breakdown, score_project
 
 
 class ScoringTests(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(app)
+        self.temp_dir = Path(".test-output") / self._testMethodName
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        settings = Settings(
+            app_name="Test Platform",
+            environment="test",
+            version="test",
+            data_dir=self.temp_dir,
+            database_path=self.temp_dir / "test.db",
+        )
+        self.client = TestClient(create_app(settings))
+        self.client.__enter__()
+
+    def tearDown(self):
+        self.client.__exit__(None, None, None)
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_score_formula_with_subtraction(self):
         signals = ProjectSignals(
@@ -102,6 +119,7 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(live.json()["status"], "ok")
         self.assertEqual(ready.status_code, 200)
         self.assertEqual(ready.json()["status"], "ready")
+        self.assertEqual(ready.json()["environment"], "test")
 
     def test_single_score_endpoint(self):
         response = self.client.post(
@@ -164,6 +182,79 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(body["highest_score"], 79)
         self.assertEqual(body["lowest_score"], 65)
         self.assertEqual(body["average_score"], 72.0)
+
+    def test_dashboard_served(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Infrastructure Pass Likelihood Platform", response.text)
+
+    def test_create_project_persists_and_returns_history(self):
+        response = self.client.post(
+            "/v1/projects",
+            json={
+                "project_id": "P-300",
+                "project_name": "Capital Loop",
+                "sponsor_organization": "Metro Works",
+                "sector": "Rail",
+                "region": "WA",
+                "notes": "Initial review",
+                "procedural_stage": 20,
+                "sponsor_strength": 8,
+                "funding_clarity": 10,
+                "route_specificity": 8,
+                "need_case": 10,
+                "row_tractability": 7,
+                "local_plan_alignment": 6,
+                "opposition_drag": 2,
+                "land_monetization_fit": 12,
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["project_name"], "Capital Loop")
+        self.assertEqual(body["latest_score"], 79)
+        self.assertEqual(len(body["score_history"]), 1)
+
+    def test_rescore_project_creates_new_score_run(self):
+        created = self.client.post(
+            "/v1/projects",
+            json={
+                "project_name": "Capital Loop",
+                "procedural_stage": 20,
+                "sponsor_strength": 8,
+                "funding_clarity": 10,
+                "route_specificity": 8,
+                "need_case": 10,
+                "row_tractability": 7,
+                "local_plan_alignment": 6,
+                "opposition_drag": 2,
+                "land_monetization_fit": 12,
+            },
+        ).json()
+        rescored = self.client.post(f"/v1/projects/{created['id']}/rescore")
+        self.assertEqual(rescored.status_code, 200)
+        self.assertEqual(len(rescored.json()["score_history"]), 2)
+
+    def test_csv_import_creates_projects(self):
+        response = self.client.post(
+            "/v1/imports/csv",
+            json={
+                "filename": "import.csv",
+                "csv_content": (
+                    "project_id,project_name,sponsor_organization,sector,region,notes,"
+                    "procedural_stage,sponsor_strength,funding_clarity,route_specificity,"
+                    "need_case,row_tractability,local_plan_alignment,opposition_drag,"
+                    "land_monetization_fit\n"
+                    "P-401,North Reach,GridCo,Transmission,CA,Fast track,18,8,11,8,9,6,5,2,13\n"
+                    "P-402,Delta Pump,Civic Water,Water,NV,Expansion,14,7,9,7,8,6,6,1,11\n"
+                ),
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["created_projects"], 2)
+        portfolio = self.client.get("/v1/portfolio").json()
+        self.assertEqual(portfolio["total_projects"], 2)
 
 
 if __name__ == "__main__":
