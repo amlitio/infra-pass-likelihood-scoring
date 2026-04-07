@@ -1,75 +1,100 @@
 # Infrastructure Pass Likelihood Platform
 
-Phase 1 turns the original scoring utility into a working product surface: an API, a browser-based portfolio dashboard, persistent project records, score history, and CSV batch intake. The original CLI is still supported for quick local scoring.
+Phase 2 turns the scoring platform into a multi-organization application with authentication, PostgreSQL support, and deployment packaging. The original CLI and stateless scoring endpoints still work, but the persistent workflows are now protected by bearer-token auth and scoped to an organization.
 
-## Phase 1 buildout
+## What Phase 2 adds
 
-- Persistent SQLite-backed project registry and score-run audit trail
-- Portfolio dashboard at `/` for operators and analysts
-- Project create, update, list, detail, and rescore workflows
-- CSV import endpoint for batch portfolio creation
-- Stateless scoring endpoints preserved for simple integrations
-- Liveness, readiness, and metadata endpoints for deployment environments
+- Organization registration and user login
+- Token-based auth for persistent workflows
+- Admin-managed teammate creation
+- Organization-scoped projects, imports, and score history
+- Database abstraction for SQLite and PostgreSQL
+- Docker and Docker Compose packaging for local or hosted deployment
+- Updated dashboard with register, login, and org-aware operations
 
 ## Architecture
 
-- `app/domain.py`: validated scoring inputs and score boundaries
-- `app/service.py`: scoring, interpretation, and normalization logic
-- `app/repository.py`: SQLite persistence for projects, score history, and imports
-- `app/schemas.py`: API contracts and persistent record models
-- `app/main.py`: app factory, routes, and startup initialization
-- `app/static/`: zero-build dashboard UI
-- `app/cli.py`: backward-compatible CLI entry point
+- `app/auth.py`: password hashing, token generation, expiry
+- `app/models.py`: SQLAlchemy models for organizations, users, projects, score runs, and imports
+- `app/repository.py`: shared persistence layer for SQLite and PostgreSQL
+- `app/main.py`: auth, organization, portfolio, and scoring endpoints
+- `app/static/`: zero-build dashboard with auth-aware workflow
+- `Dockerfile`: production app container
+- `docker-compose.yml`: app + PostgreSQL local stack
 
-## One-command Git Bash setup
+## Local run
 
-API server:
+Git Bash one-liner:
 
 ```bash
 python -m venv .venv && source .venv/Scripts/activate && python -m pip install --upgrade pip && pip install -r requirements.txt && uvicorn app.main:app --reload
 ```
 
-CLI demo:
-
-```bash
-python -m venv .venv && source .venv/Scripts/activate && python -m pip install --upgrade pip && pip install -r requirements.txt && python scoring.py --demo
-```
-
-## Run surfaces manually
-
-Install:
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-CLI:
-
-```bash
-python scoring.py --demo
-python scoring.py --input-json project.json
-```
-
-API and dashboard:
-
-```bash
-uvicorn app.main:app --reload
-```
-
-Open:
+Then open:
 
 - `http://127.0.0.1:8000/`
 - `http://127.0.0.1:8000/docs`
-- `http://127.0.0.1:8000/redoc`
+
+## Docker run
+
+```bash
+docker compose up --build
+```
+
+This starts:
+
+- API + dashboard on `http://127.0.0.1:8000`
+- PostgreSQL on `localhost:5432`
+
+## Configuration
+
+Use `.env.example` as the starting point.
+
+- `APP_NAME`
+- `APP_ENV`
+- `APP_VERSION`
+- `APP_DATA_DIR`
+- `APP_DATABASE_URL`
+- `APP_AUTH_TOKEN_TTL_HOURS`
+- `APP_ALLOW_OPEN_REGISTRATION`
+
+### Database examples
+
+SQLite:
+
+```text
+sqlite:///data/infra_scoring.db
+```
+
+PostgreSQL:
+
+```text
+postgresql+psycopg://postgres:postgres@db:5432/infra_scoring
+```
 
 ## API overview
 
-### Stateless scoring
+### Public endpoints
 
+- `GET /health/live`
+- `GET /health/ready`
+- `GET /v1/metadata`
 - `POST /v1/score`
 - `POST /v1/score/batch`
 
-### Persistent project workflows
+### Auth endpoints
+
+- `POST /v1/auth/register`
+- `POST /v1/auth/login`
+- `GET /v1/auth/me`
+
+### Organization endpoints
+
+- `GET /v1/organizations/me`
+- `GET /v1/organizations/me/users`
+- `POST /v1/organizations/me/users`
+
+### Protected portfolio endpoints
 
 - `GET /v1/portfolio`
 - `GET /v1/projects`
@@ -77,45 +102,36 @@ Open:
 - `GET /v1/projects/{project_pk}`
 - `PUT /v1/projects/{project_pk}`
 - `POST /v1/projects/{project_pk}/rescore`
-
-### Batch intake
-
 - `POST /v1/imports/csv`
 
-Expected CSV headers:
+All protected routes require:
 
 ```text
-project_id,project_name,sponsor_organization,sector,region,notes,procedural_stage,sponsor_strength,funding_clarity,route_specificity,need_case,row_tractability,local_plan_alignment,opposition_drag,land_monetization_fit
+Authorization: Bearer <access_token>
 ```
 
-### Ops endpoints
+## Register flow example
 
-- `GET /health/live`
-- `GET /health/ready`
-- `GET /v1/metadata`
-
-## Configuration
-
-Optional environment variables:
-
-- `APP_NAME`
-- `APP_ENV`
-- `APP_VERSION`
-- `APP_DATA_DIR`
-- `APP_DATABASE_PATH`
-- `APP_DEFAULT_BATCH_ACTOR`
-
-## Phase 2 candidate backlog
-
-- Organization and user accounts with role-based access
-- PostgreSQL migration path for multi-user deployment
-- Saved filters, search, and portfolio segmentation
-- Rich import/export workflows for Excel and BI tooling
-- Model versioning and configurable weights
-- CI, Docker, and deployment manifests
+```json
+{
+  "organization_name": "Atlas Infrastructure",
+  "organization_slug": "atlas-infrastructure",
+  "email": "admin@atlas.example",
+  "password": "supersecure",
+  "full_name": "Avery Analyst"
+}
+```
 
 ## Tests
 
 ```bash
 python -m unittest test_scoring.py
 ```
+
+## Next logical Phase 3
+
+- SSO and external identity providers
+- Audit log browsing and revocable sessions
+- Background jobs and async imports
+- Search, saved views, and reporting exports
+- Managed migrations and rollout automation

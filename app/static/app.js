@@ -1,6 +1,9 @@
 const state = {
+  token: localStorage.getItem("iplp_token"),
   selectedProjectId: null,
   projects: [],
+  user: null,
+  organization: null,
 };
 
 function formToJson(form) {
@@ -18,36 +21,73 @@ function formToJson(form) {
     "land_monetization_fit",
   ];
   for (const field of numericFields) {
-    if (json[field] !== undefined) {
+    if (json[field] !== undefined && json[field] !== "") {
       json[field] = Number(json[field]);
     }
   }
   return json;
 }
 
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
-  const payload = await response.json();
+async function fetchJson(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (state.token) {
+    headers.set("Authorization", `Bearer ${state.token}`);
+  }
+  if (!headers.has("Content-Type") && options.body) {
+    headers.set("Content-Type", "application/json");
+  }
+  const response = await fetch(url, { ...options, headers });
+  const raw = await response.text();
+  let payload;
+  try {
+    payload = raw ? JSON.parse(raw) : {};
+  } catch {
+    payload = { detail: raw || "Request failed" };
+  }
   if (!response.ok) {
     throw new Error(payload.detail || "Request failed");
   }
   return payload;
 }
 
+function persistSession(authPayload) {
+  state.token = authPayload.access_token;
+  state.user = authPayload.user;
+  state.organization = authPayload.organization;
+  localStorage.setItem("iplp_token", state.token);
+  document.getElementById("session-user").textContent = `${state.user.full_name} | ${state.user.role}`;
+  document.getElementById("kpi-org").textContent = state.organization.name;
+  document.getElementById("workspace-grid").classList.remove("hidden");
+  document.getElementById("lower-grid").classList.remove("hidden");
+}
+
+function clearSession() {
+  state.token = null;
+  state.user = null;
+  state.organization = null;
+  state.projects = [];
+  state.selectedProjectId = null;
+  localStorage.removeItem("iplp_token");
+  document.getElementById("session-user").textContent = "Not signed in";
+  document.getElementById("kpi-org").textContent = "None";
+  document.getElementById("workspace-grid").classList.add("hidden");
+  document.getElementById("lower-grid").classList.add("hidden");
+  document.getElementById("project-list").innerHTML = "";
+  document.getElementById("project-detail").textContent = "Sign in to inspect project history.";
+}
+
 function renderPortfolio(summary) {
   document.getElementById("kpi-total").textContent = summary.total_projects;
   document.getElementById("kpi-average").textContent = summary.average_score;
   document.getElementById("kpi-priority").textContent = summary.high_priority_projects;
-  document.getElementById("kpi-recent").textContent = summary.recent_scores;
 }
 
 function renderProjects(projects) {
   const container = document.getElementById("project-list");
   if (!projects.length) {
-    container.innerHTML = '<p class="empty-state">No projects yet. Create one or import a CSV to populate the portfolio.</p>';
+    container.innerHTML = '<p class="empty-state">No projects yet for this organization.</p>';
     return;
   }
-
   container.innerHTML = projects.map((project) => `
     <article class="project-row ${project.id === state.selectedProjectId ? "active" : ""}" data-project-id="${project.id}">
       <span class="project-name">${project.project_name}</span>
@@ -59,7 +99,6 @@ function renderProjects(projects) {
       </div>
     </article>
   `).join("");
-
   for (const row of container.querySelectorAll(".project-row")) {
     row.addEventListener("click", () => loadProjectDetail(Number(row.dataset.projectId)));
   }
@@ -73,7 +112,6 @@ function renderDetail(project) {
       <strong>${value}</strong>
     </div>
   `).join("");
-
   const history = project.score_history.map((entry) => `
     <div class="history-row">
       <span>${new Date(entry.created_at).toLocaleString()}</span>
@@ -82,7 +120,6 @@ function renderDetail(project) {
       <span>${entry.triggered_by}</span>
     </div>
   `).join("");
-
   detail.innerHTML = `
     <div class="detail-head">
       <div>
@@ -107,7 +144,6 @@ function renderDetail(project) {
       <div class="history-list">${history}</div>
     </div>
   `;
-
   document.getElementById("rescore-button").addEventListener("click", async () => {
     await fetchJson(`/v1/projects/${project.id}/rescore`, { method: "POST" });
     await refreshWorkspace(project.id);
@@ -122,22 +158,77 @@ async function loadProjectDetail(projectId) {
 }
 
 async function refreshWorkspace(selectedProjectId = state.selectedProjectId) {
-  const [summary, projects] = await Promise.all([
-    fetchJson("/v1/portfolio"),
-    fetchJson("/v1/projects"),
-  ]);
-  state.projects = projects;
-  renderPortfolio(summary);
-  renderProjects(projects);
-  if (selectedProjectId) {
-    const selected = projects.find((project) => project.id === selectedProjectId);
-    if (selected) {
-      await loadProjectDetail(selectedProjectId);
-      return;
-    }
+  if (!state.token) {
+    clearSession();
+    return;
   }
-  if (projects.length) {
-    await loadProjectDetail(projects[0].id);
+  try {
+    const [me, org, summary, projects] = await Promise.all([
+      fetchJson("/v1/auth/me"),
+      fetchJson("/v1/organizations/me"),
+      fetchJson("/v1/portfolio"),
+      fetchJson("/v1/projects"),
+    ]);
+    state.user = me;
+    state.organization = org;
+    state.projects = projects;
+    document.getElementById("session-user").textContent = `${me.full_name} | ${me.role}`;
+    document.getElementById("kpi-org").textContent = org.name;
+    document.getElementById("workspace-grid").classList.remove("hidden");
+    document.getElementById("lower-grid").classList.remove("hidden");
+    renderPortfolio(summary);
+    renderProjects(projects);
+    if (selectedProjectId) {
+      const selected = projects.find((project) => project.id === selectedProjectId);
+      if (selected) {
+        await loadProjectDetail(selectedProjectId);
+        return;
+      }
+    }
+    if (projects.length) {
+      await loadProjectDetail(projects[0].id);
+    } else {
+      document.getElementById("project-detail").textContent = "No projects yet for this organization.";
+    }
+  } catch (error) {
+    clearSession();
+    document.getElementById("login-status").textContent = error.message;
+  }
+}
+
+async function handleRegister(event) {
+  event.preventDefault();
+  const status = document.getElementById("register-status");
+  status.textContent = "Creating organization...";
+  try {
+    const authPayload = await fetchJson("/v1/auth/register", {
+      method: "POST",
+      body: JSON.stringify(formToJson(event.target)),
+    });
+    persistSession(authPayload);
+    status.textContent = `Registered ${authPayload.organization.name}.`;
+    event.target.reset();
+    await refreshWorkspace();
+  } catch (error) {
+    status.textContent = error.message;
+  }
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  const status = document.getElementById("login-status");
+  status.textContent = "Signing in...";
+  try {
+    const authPayload = await fetchJson("/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify(formToJson(event.target)),
+    });
+    persistSession(authPayload);
+    status.textContent = `Signed in to ${authPayload.organization.name}.`;
+    event.target.reset();
+    await refreshWorkspace();
+  } catch (error) {
+    status.textContent = error.message;
   }
 }
 
@@ -146,15 +237,29 @@ async function handleProjectSubmit(event) {
   const status = document.getElementById("project-status");
   status.textContent = "Creating project...";
   try {
-    const payload = formToJson(event.target);
     const project = await fetchJson("/v1/projects", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(formToJson(event.target)),
     });
-    event.target.reset();
     status.textContent = `Saved ${project.project_name} with score ${project.latest_score}.`;
+    event.target.reset();
     await refreshWorkspace(project.id);
+  } catch (error) {
+    status.textContent = error.message;
+  }
+}
+
+async function handleMemberSubmit(event) {
+  event.preventDefault();
+  const status = document.getElementById("member-status");
+  status.textContent = "Adding member...";
+  try {
+    const member = await fetchJson("/v1/organizations/me/users", {
+      method: "POST",
+      body: JSON.stringify(formToJson(event.target)),
+    });
+    status.textContent = `Added ${member.full_name}.`;
+    event.target.reset();
   } catch (error) {
     status.textContent = error.message;
   }
@@ -165,11 +270,9 @@ async function handleImportSubmit(event) {
   const status = document.getElementById("import-status");
   status.textContent = "Importing portfolio...";
   try {
-    const payload = formToJson(event.target);
     const result = await fetchJson("/v1/imports/csv", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(formToJson(event.target)),
     });
     status.textContent = `Imported ${result.created_projects} projects from ${result.filename}.`;
     await refreshWorkspace(result.results[0]?.id || null);
@@ -178,6 +281,14 @@ async function handleImportSubmit(event) {
   }
 }
 
+document.getElementById("register-form").addEventListener("submit", handleRegister);
+document.getElementById("login-form").addEventListener("submit", handleLogin);
 document.getElementById("project-form").addEventListener("submit", handleProjectSubmit);
+document.getElementById("member-form").addEventListener("submit", handleMemberSubmit);
 document.getElementById("import-form").addEventListener("submit", handleImportSubmit);
+document.getElementById("logout-button").addEventListener("click", () => {
+  clearSession();
+  document.getElementById("login-status").textContent = "Signed out.";
+});
+
 refreshWorkspace();

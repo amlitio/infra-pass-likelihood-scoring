@@ -4,3 +4,4 @@ tmp*/
 *.pyc
 .venv/
 data/
+.test-output/

@@ -3,25 +3,33 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import Settings
+from .models import User
 from .repository import ProjectRepository
 from .schemas import (
+    AuthResponse,
     BatchScoreRequest,
     BatchScoreResponse,
     CsvImportRequest,
     CsvImportResponse,
+    LoginRequest,
+    OrganizationMemberCreateRequest,
+    OrganizationSummary,
     PortfolioSummary,
     ProjectCreateRequest,
     ProjectDetail,
     ProjectSummary,
     ProjectUpdateRequest,
+    RegisterRequest,
     ScoreRequest,
     ScoreResponse,
+    UserSummary,
 )
 from .service import build_score_response
 from .ui import STATIC_DIR
@@ -47,6 +55,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.repository = repository
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+    def get_repository() -> ProjectRepository:
+        return app.state.repository
+
+    def get_current_user(
+        authorization: Annotated[str | None, Header()] = None,
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> User:
+        if not authorization or not authorization.lower().startswith("bearer "):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")
+        token = authorization.split(" ", 1)[1].strip()
+        try:
+            return repo.authenticate_token(token)
+        except (LookupError, PermissionError) as error:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(error)) from error
+
+    def require_admin(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role != "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin role required")
+        return current_user
+
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
@@ -61,7 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "status": "ready",
             "environment": settings.environment,
             "version": settings.version,
-            "database_path": str(settings.database_path),
+            "database_backend": settings.database_backend,
         }
 
     @app.get("/v1/metadata")
@@ -76,47 +104,131 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "project-registry",
                 "score-history",
                 "csv-import",
+                "organization-auth",
+                "postgresql-ready",
                 "dashboard-ui",
             ],
         }
 
+    @app.post("/v1/auth/register", response_model=AuthResponse, status_code=201)
+    def register(payload: RegisterRequest, repo: ProjectRepository = Depends(get_repository)) -> AuthResponse:
+        if not settings.allow_open_registration:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="open registration is disabled")
+        try:
+            return repo.register(payload)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+    @app.post("/v1/auth/login", response_model=AuthResponse)
+    def login(payload: LoginRequest, repo: ProjectRepository = Depends(get_repository)) -> AuthResponse:
+        try:
+            return repo.login(payload)
+        except LookupError as error:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
+
+    @app.get("/v1/auth/me", response_model=UserSummary)
+    def auth_me(
+        current_user: User = Depends(get_current_user),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> UserSummary:
+        return repo.get_user(current_user.id)
+
+    @app.get("/v1/organizations/me", response_model=OrganizationSummary)
+    def organization_me(
+        current_user: User = Depends(get_current_user),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> OrganizationSummary:
+        return repo.get_organization(current_user.organization_id)
+
+    @app.get("/v1/organizations/me/users", response_model=list[UserSummary])
+    def list_members(
+        current_user: User = Depends(get_current_user),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> list[UserSummary]:
+        return repo.list_members(current_user.organization_id)
+
+    @app.post("/v1/organizations/me/users", response_model=UserSummary, status_code=201)
+    def create_member(
+        payload: OrganizationMemberCreateRequest,
+        current_user: User = Depends(require_admin),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> UserSummary:
+        try:
+            return repo.create_member(current_user.organization_id, payload)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
     @app.get("/v1/portfolio", response_model=PortfolioSummary)
-    def portfolio_summary() -> PortfolioSummary:
-        return PortfolioSummary(**repository.get_portfolio_summary())
+    def portfolio_summary(
+        current_user: User = Depends(get_current_user),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> PortfolioSummary:
+        return repo.get_portfolio_summary(current_user.organization_id)
 
     @app.get("/v1/projects", response_model=list[ProjectSummary])
-    def list_projects() -> list[ProjectSummary]:
-        return repository.list_projects()
+    def list_projects(
+        current_user: User = Depends(get_current_user),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> list[ProjectSummary]:
+        return repo.list_projects(current_user.organization_id)
 
     @app.get("/v1/projects/{project_pk}", response_model=ProjectDetail)
-    def get_project(project_pk: int) -> ProjectDetail:
+    def get_project(
+        project_pk: int,
+        current_user: User = Depends(get_current_user),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> ProjectDetail:
         try:
-            return repository.get_project(project_pk)
+            return repo.get_project(current_user.organization_id, project_pk)
         except LookupError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.post("/v1/projects", response_model=ProjectDetail, status_code=201)
-    def create_project(payload: ProjectCreateRequest) -> ProjectDetail:
-        return repository.create_project(payload)
+    def create_project(
+        payload: ProjectCreateRequest,
+        current_user: User = Depends(get_current_user),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> ProjectDetail:
+        return repo.create_project(current_user.organization_id, current_user.id, payload, current_user.email)
 
     @app.put("/v1/projects/{project_pk}", response_model=ProjectDetail)
-    def update_project(project_pk: int, payload: ProjectUpdateRequest) -> ProjectDetail:
+    def update_project(
+        project_pk: int,
+        payload: ProjectUpdateRequest,
+        current_user: User = Depends(get_current_user),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> ProjectDetail:
         try:
-            return repository.update_project(project_pk, payload)
+            return repo.update_project(current_user.organization_id, project_pk, payload, current_user.email)
         except LookupError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.post("/v1/projects/{project_pk}/rescore", response_model=ProjectDetail)
-    def rescore_project(project_pk: int) -> ProjectDetail:
+    def rescore_project(
+        project_pk: int,
+        current_user: User = Depends(get_current_user),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> ProjectDetail:
         try:
-            return repository.rescore_project(project_pk)
+            return repo.rescore_project(current_user.organization_id, project_pk, current_user.email)
         except LookupError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.post("/v1/imports/csv", response_model=CsvImportResponse, status_code=201)
-    def import_csv(payload: CsvImportRequest) -> CsvImportResponse:
+    def import_csv(
+        payload: CsvImportRequest,
+        current_user: User = Depends(get_current_user),
+        repo: ProjectRepository = Depends(get_repository),
+    ) -> CsvImportResponse:
         try:
-            return repository.import_csv(payload)
+            return repo.import_csv(
+                current_user.organization_id,
+                current_user.id,
+                payload,
+                payload.triggered_by or current_user.email or settings.default_batch_actor,
+            )
         except (KeyError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 

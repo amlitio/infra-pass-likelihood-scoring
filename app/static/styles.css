@@ -140,6 +140,10 @@ button,
   grid-template-columns: 1.25fr 1fr;
 }
 
+.auth-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .lower-grid {
   grid-template-columns: 1fr 1.1fr;
 }
@@ -214,9 +218,23 @@ button {
   cursor: pointer;
 }
 
+.secondary-button {
+  background: transparent;
+  color: var(--accent-deep);
+  border: 1px solid var(--accent-deep);
+}
+
 .status {
   min-height: 1.2rem;
   color: var(--success);
+}
+
+.session-strip {
+  margin-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
 }
 
 .project-row {
@@ -271,6 +289,10 @@ button {
 .history-list {
   display: grid;
   gap: 10px;
+}
+
+.hidden {
+  display: none;
 }
 
 @media (max-width: 1120px) {

@@ -64,7 +64,6 @@ class BatchScoreRequest(BaseModel):
     """Bulk scoring request."""
 
     model_config = ConfigDict(extra="forbid")
-
     projects: List[ScoreRequest] = Field(min_length=1, max_length=500)
 
 
@@ -76,6 +75,58 @@ class BatchScoreResponse(BaseModel):
     highest_score: int
     lowest_score: int
     results: List[ScoreResponse]
+
+
+class UserSummary(BaseModel):
+    id: int
+    organization_id: int
+    email: str
+    full_name: str
+    role: str
+    is_active: bool
+    created_at: str
+
+
+class OrganizationSummary(BaseModel):
+    id: int
+    name: str
+    slug: str
+    created_at: str
+    member_count: int = 0
+    project_count: int = 0
+
+
+class RegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    organization_name: str = Field(min_length=2)
+    organization_slug: Optional[str] = None
+    email: str
+    password: str = Field(min_length=8)
+    full_name: str = Field(min_length=2)
+
+
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str
+    password: str = Field(min_length=8)
+
+
+class OrganizationMemberCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str
+    password: str = Field(min_length=8)
+    full_name: str = Field(min_length=2)
+    role: str = Field(default="analyst")
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserSummary
+    organization: OrganizationSummary
 
 
 class ProjectCreateRequest(ScoreRequest):
@@ -94,7 +145,7 @@ class ScoreRunRecord(BaseModel):
     """Persistent score run metadata."""
 
     id: int
-    project_pk: int
+    project_id: int
     score: int
     interpretation: str
     breakdown: Dict[str, int]
@@ -107,6 +158,8 @@ class ProjectSummary(BaseModel):
     """Project summary with current scoring state."""
 
     id: int
+    organization_id: int
+    owner_user_id: Optional[int] = None
     project_id: Optional[str] = None
     project_name: str
     sponsor_organization: Optional[str] = None

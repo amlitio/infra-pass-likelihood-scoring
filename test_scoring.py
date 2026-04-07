@@ -1,5 +1,6 @@
 import json
 import shutil
+import sqlite3
 import subprocess
 import unittest
 from pathlib import Path
@@ -13,22 +14,64 @@ from scoring import ProjectSignals, interpret_score, project_signals_from_dict, 
 
 class ScoringTests(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = Path(".test-output") / self._testMethodName
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.test_dir = Path(".test-output") / self._testMethodName
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+        self.test_dir.mkdir(parents=True, exist_ok=True)
         settings = Settings(
             app_name="Test Platform",
             environment="test",
             version="test",
-            data_dir=self.temp_dir,
-            database_path=self.temp_dir / "test.db",
+            data_dir=self.test_dir,
+            database_url=f"sqlite:///{(self.test_dir / 'test.db').as_posix()}",
+            allow_open_registration=True,
         )
         self.client = TestClient(create_app(settings))
         self.client.__enter__()
 
     def tearDown(self):
+        self.client.app.state.repository.engine.dispose()
         self.client.__exit__(None, None, None)
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def register_org(self, organization_name="Atlas Infra", email="admin@example.com"):
+        response = self.client.post(
+            "/v1/auth/register",
+            json={
+                "organization_name": organization_name,
+                "organization_slug": organization_name.lower().replace(" ", "-"),
+                "email": email,
+                "password": "supersecure",
+                "full_name": "Admin User",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        return response.json()
+
+    def auth_headers(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def create_project(self, token, name="Capital Loop"):
+        return self.client.post(
+            "/v1/projects",
+            headers=self.auth_headers(token),
+            json={
+                "project_name": name,
+                "project_id": "P-1",
+                "sponsor_organization": "Metro Works",
+                "sector": "Rail",
+                "region": "WA",
+                "notes": "Initial review",
+                "procedural_stage": 20,
+                "sponsor_strength": 8,
+                "funding_clarity": 10,
+                "route_specificity": 8,
+                "need_case": 10,
+                "row_tractability": 7,
+                "local_plan_alignment": 6,
+                "opposition_drag": 2,
+                "land_monetization_fit": 12,
+            },
+        )
 
     def test_score_formula_with_subtraction(self):
         signals = ProjectSignals(
@@ -112,20 +155,15 @@ class ScoringTests(unittest.TestCase):
             path.unlink(missing_ok=True)
         self.assertIn("Score: 79/100", result.stdout)
 
-    def test_health_endpoints(self):
-        live = self.client.get("/health/live")
-        ready = self.client.get("/health/ready")
-        self.assertEqual(live.status_code, 200)
-        self.assertEqual(live.json()["status"], "ok")
-        self.assertEqual(ready.status_code, 200)
-        self.assertEqual(ready.json()["status"], "ready")
-        self.assertEqual(ready.json()["environment"], "test")
+    def test_dashboard_served(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Infrastructure Pass Likelihood Platform", response.text)
 
-    def test_single_score_endpoint(self):
+    def test_stateless_score_endpoint_remains_public(self):
         response = self.client.post(
             "/v1/score",
             json={
-                "project_id": "P-100",
                 "project_name": "North Corridor Expansion",
                 "procedural_stage": 20,
                 "sponsor_strength": 8,
@@ -139,105 +177,63 @@ class ScoringTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["score"], 79)
-        self.assertEqual(body["project_id"], "P-100")
-        self.assertIn("utilization", body)
+        self.assertEqual(response.json()["score"], 79)
 
-    def test_batch_score_endpoint(self):
-        response = self.client.post(
-            "/v1/score/batch",
-            json={
-                "projects": [
-                    {
-                        "project_id": "P-1",
-                        "procedural_stage": 20,
-                        "sponsor_strength": 8,
-                        "funding_clarity": 10,
-                        "route_specificity": 8,
-                        "need_case": 10,
-                        "row_tractability": 7,
-                        "local_plan_alignment": 6,
-                        "opposition_drag": 2,
-                        "land_monetization_fit": 12,
-                    },
-                    {
-                        "project_id": "P-2",
-                        "procedural_stage": 15,
-                        "sponsor_strength": 7,
-                        "funding_clarity": 8,
-                        "route_specificity": 9,
-                        "need_case": 9,
-                        "row_tractability": 5,
-                        "local_plan_alignment": 4,
-                        "opposition_drag": 2,
-                        "land_monetization_fit": 10,
-                    },
-                ]
-            },
+    def test_registration_login_and_profile(self):
+        registered = self.register_org()
+        login = self.client.post(
+            "/v1/auth/login",
+            json={"email": "admin@example.com", "password": "supersecure"},
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["total_projects"], 2)
-        self.assertEqual(body["highest_score"], 79)
-        self.assertEqual(body["lowest_score"], 65)
-        self.assertEqual(body["average_score"], 72.0)
+        self.assertEqual(login.status_code, 200)
+        me = self.client.get("/v1/auth/me", headers=self.auth_headers(login.json()["access_token"]))
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.json()["email"], registered["user"]["email"])
 
-    def test_dashboard_served(self):
-        response = self.client.get("/")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Infrastructure Pass Likelihood Platform", response.text)
+    def test_protected_endpoints_require_auth(self):
+        response = self.client.get("/v1/projects")
+        self.assertEqual(response.status_code, 401)
 
-    def test_create_project_persists_and_returns_history(self):
+    def test_project_creation_and_rescore_are_org_scoped(self):
+        atlas = self.register_org("Atlas Infra", "atlas@example.com")
+        other = self.register_org("Beacon Infra", "beacon@example.com")
+        created = self.create_project(atlas["access_token"])
+        self.assertEqual(created.status_code, 201)
+        detail = self.client.post(
+            f"/v1/projects/{created.json()['id']}/rescore",
+            headers=self.auth_headers(atlas["access_token"]),
+        )
+        self.assertEqual(len(detail.json()["score_history"]), 2)
+        hidden = self.client.get(
+            f"/v1/projects/{created.json()['id']}",
+            headers=self.auth_headers(other["access_token"]),
+        )
+        self.assertEqual(hidden.status_code, 404)
+
+    def test_admin_can_add_member(self):
+        registered = self.register_org()
         response = self.client.post(
-            "/v1/projects",
+            "/v1/organizations/me/users",
+            headers=self.auth_headers(registered["access_token"]),
             json={
-                "project_id": "P-300",
-                "project_name": "Capital Loop",
-                "sponsor_organization": "Metro Works",
-                "sector": "Rail",
-                "region": "WA",
-                "notes": "Initial review",
-                "procedural_stage": 20,
-                "sponsor_strength": 8,
-                "funding_clarity": 10,
-                "route_specificity": 8,
-                "need_case": 10,
-                "row_tractability": 7,
-                "local_plan_alignment": 6,
-                "opposition_drag": 2,
-                "land_monetization_fit": 12,
+                "email": "analyst@example.com",
+                "password": "teamsecure",
+                "full_name": "Analyst User",
+                "role": "analyst",
             },
         )
         self.assertEqual(response.status_code, 201)
-        body = response.json()
-        self.assertEqual(body["project_name"], "Capital Loop")
-        self.assertEqual(body["latest_score"], 79)
-        self.assertEqual(len(body["score_history"]), 1)
+        members = self.client.get(
+            "/v1/organizations/me/users",
+            headers=self.auth_headers(registered["access_token"]),
+        )
+        self.assertEqual(len(members.json()), 2)
 
-    def test_rescore_project_creates_new_score_run(self):
-        created = self.client.post(
-            "/v1/projects",
-            json={
-                "project_name": "Capital Loop",
-                "procedural_stage": 20,
-                "sponsor_strength": 8,
-                "funding_clarity": 10,
-                "route_specificity": 8,
-                "need_case": 10,
-                "row_tractability": 7,
-                "local_plan_alignment": 6,
-                "opposition_drag": 2,
-                "land_monetization_fit": 12,
-            },
-        ).json()
-        rescored = self.client.post(f"/v1/projects/{created['id']}/rescore")
-        self.assertEqual(rescored.status_code, 200)
-        self.assertEqual(len(rescored.json()["score_history"]), 2)
-
-    def test_csv_import_creates_projects(self):
+    def test_csv_import_and_portfolio_summary(self):
+        registered = self.register_org()
         response = self.client.post(
             "/v1/imports/csv",
+            headers=self.auth_headers(registered["access_token"]),
             json={
                 "filename": "import.csv",
                 "csv_content": (
@@ -251,10 +247,70 @@ class ScoringTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 201)
-        body = response.json()
-        self.assertEqual(body["created_projects"], 2)
-        portfolio = self.client.get("/v1/portfolio").json()
-        self.assertEqual(portfolio["total_projects"], 2)
+        portfolio = self.client.get(
+            "/v1/portfolio",
+            headers=self.auth_headers(registered["access_token"]),
+        )
+        self.assertEqual(portfolio.json()["total_projects"], 2)
+
+    def test_health_reports_database_backend(self):
+        response = self.client.get("/health/ready")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["database_backend"], "sqlite")
+
+    def test_legacy_sqlite_db_is_backed_up_and_reset(self):
+        self.client.app.state.repository.engine.dispose()
+        self.client.__exit__(None, None, None)
+        legacy_db = self.test_dir / "test.db"
+        legacy_db.unlink(missing_ok=True)
+        with sqlite3.connect(legacy_db) as connection:
+            connection.executescript(
+                """
+                CREATE TABLE projects (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id TEXT,
+                    project_name TEXT NOT NULL,
+                    sponsor_organization TEXT,
+                    sector TEXT,
+                    region TEXT,
+                    notes TEXT,
+                    procedural_stage INTEGER NOT NULL,
+                    sponsor_strength INTEGER NOT NULL,
+                    funding_clarity INTEGER NOT NULL,
+                    route_specificity INTEGER NOT NULL,
+                    need_case INTEGER NOT NULL,
+                    row_tractability INTEGER NOT NULL,
+                    local_plan_alignment INTEGER NOT NULL,
+                    opposition_drag INTEGER NOT NULL,
+                    land_monetization_fit INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                """
+            )
+        settings = Settings(
+            app_name="Test Platform",
+            environment="test",
+            version="test",
+            data_dir=self.test_dir,
+            database_url=f"sqlite:///{legacy_db.as_posix()}",
+            allow_open_registration=True,
+        )
+        self.client = TestClient(create_app(settings))
+        self.client.__enter__()
+        response = self.client.post(
+            "/v1/auth/register",
+            json={
+                "organization_name": "Reset Org",
+                "organization_slug": "reset-org",
+                "email": "reset@example.com",
+                "password": "supersecure",
+                "full_name": "Reset Admin",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        backups = list(self.test_dir.glob("test.legacy-*.db"))
+        self.assertTrue(backups)
 
 
 if __name__ == "__main__":

@@ -10,17 +10,17 @@
   <div class="shell">
     <aside class="rail">
       <div>
-        <p class="eyebrow">Phase 1 Control Surface</p>
+        <p class="eyebrow">Phase 2 Control Surface</p>
         <h1>Infrastructure Pass Likelihood Platform</h1>
-        <p class="lede">A working portfolio workspace for analysts tracking project quality, score movement, and batch intake.</p>
+        <p class="lede">Organization-aware scoring operations with sign-in, portfolio controls, and PostgreSQL-ready deployment.</p>
       </div>
       <div class="rail-block">
-        <p class="rail-label">Visual thesis</p>
-        <p>Editorial command center with transit-map energy, restrained color, and dense operational signal.</p>
+        <p class="rail-label">Auth</p>
+        <p>Bearer-token access scoped to a single organization with role-aware admin actions.</p>
       </div>
       <div class="rail-block">
-        <p class="rail-label">Interaction thesis</p>
-        <p>Fast status refresh, crisp detail swaps, and subtle reveal motion as the workspace updates.</p>
+        <p class="rail-label">Persistence</p>
+        <p>SQLite for local work, PostgreSQL for multi-user deployment, one application surface for both.</p>
       </div>
       <a class="docs-link" href="/docs" target="_blank" rel="noreferrer">Open API docs</a>
     </aside>
@@ -28,11 +28,15 @@
     <main class="workspace">
       <section class="hero">
         <div>
-          <p class="eyebrow">Portfolio Overview</p>
-          <h2>Operate a scoring pipeline, not just a calculator.</h2>
-          <p class="lede">Create projects, track rescoring history, import portfolios from CSV, and review the highest-confidence opportunities in one workspace.</p>
+          <p class="eyebrow">Phase 2 Platform</p>
+          <h2>Run a secure, multi-organization scoring workspace.</h2>
+          <p class="lede">Register an organization, sign in, add teammates, and manage a portfolio that stays isolated to your org.</p>
         </div>
         <div class="kpi-grid">
+          <div>
+            <span>Organization</span>
+            <strong id="kpi-org">None</strong>
+          </div>
           <div>
             <span>Total projects</span>
             <strong id="kpi-total">0</strong>
@@ -45,27 +49,62 @@
             <span>High priority</span>
             <strong id="kpi-priority">0</strong>
           </div>
-          <div>
-            <span>Recent score events</span>
-            <strong id="kpi-recent">0</strong>
-          </div>
         </div>
       </section>
 
-      <section class="content-grid">
+      <section class="content-grid auth-grid">
+        <section class="pane">
+          <div class="pane-header">
+            <h3>Register organization</h3>
+            <p>Create an admin account and bootstrap an isolated workspace.</p>
+          </div>
+          <form id="register-form">
+            <div class="field-row">
+              <label>Organization<input name="organization_name" required></label>
+              <label>Slug<input name="organization_slug" placeholder="optional"></label>
+            </div>
+            <div class="field-row">
+              <label>Full name<input name="full_name" required></label>
+              <label>Email<input name="email" type="email" required></label>
+            </div>
+            <label>Password<input name="password" type="password" required></label>
+            <button type="submit">Register and sign in</button>
+          </form>
+          <p class="status" id="register-status"></p>
+        </section>
+
+        <section class="pane">
+          <div class="pane-header">
+            <h3>Sign in</h3>
+            <p>Resume an existing organization session with your bearer token account.</p>
+          </div>
+          <form id="login-form">
+            <label>Email<input name="email" type="email" required></label>
+            <label>Password<input name="password" type="password" required></label>
+            <button type="submit">Sign in</button>
+          </form>
+          <div class="session-strip">
+            <span id="session-user">Not signed in</span>
+            <button type="button" id="logout-button" class="secondary-button">Sign out</button>
+          </div>
+          <p class="status" id="login-status"></p>
+        </section>
+      </section>
+
+      <section class="content-grid hidden" id="workspace-grid">
         <section class="pane">
           <div class="pane-header">
             <h3>Create project</h3>
-            <p>Persist a new candidate and generate an auditable first score.</p>
+            <p>Persist a new candidate and generate an auditable score run.</p>
           </div>
-          <form id="project-form" class="project-form">
+          <form id="project-form">
             <div class="field-row">
               <label>Project name<input name="project_name" required></label>
               <label>Project ID<input name="project_id"></label>
             </div>
             <div class="field-row">
               <label>Sponsor<input name="sponsor_organization"></label>
-              <label>Sector<input name="sector" placeholder="Transmission, rail, water"></label>
+              <label>Sector<input name="sector"></label>
             </div>
             <div class="field-row">
               <label>Region<input name="region"></label>
@@ -89,12 +128,24 @@
 
         <section class="pane">
           <div class="pane-header">
-            <h3>CSV intake</h3>
-            <p>Paste a CSV with the same field names as the API to bulk-create projects.</p>
+            <h3>Organization admin</h3>
+            <p>Add teammates and bulk-load project pipelines into your org.</p>
           </div>
-          <form id="import-form" class="import-form">
+          <form id="member-form">
+            <div class="field-row">
+              <label>Member name<input name="full_name"></label>
+              <label>Email<input name="email" type="email"></label>
+            </div>
+            <div class="field-row">
+              <label>Password<input name="password" type="password"></label>
+              <label>Role<input name="role" value="analyst"></label>
+            </div>
+            <button type="submit">Add member</button>
+          </form>
+          <p class="status" id="member-status"></p>
+          <form id="import-form">
             <label>Filename<input name="filename" value="portfolio-import.csv"></label>
-            <label>CSV content<textarea name="csv_content" rows="12" spellcheck="false">project_id,project_name,sponsor_organization,sector,region,notes,procedural_stage,sponsor_strength,funding_clarity,route_specificity,need_case,row_tractability,local_plan_alignment,opposition_drag,land_monetization_fit
+            <label>CSV content<textarea name="csv_content" rows="10" spellcheck="false">project_id,project_name,sponsor_organization,sector,region,notes,procedural_stage,sponsor_strength,funding_clarity,route_specificity,need_case,row_tractability,local_plan_alignment,opposition_drag,land_monetization_fit
 P-200,Western Link,Atlas Infrastructure,Transmission,CA,Priority corridor,18,8,11,8,9,6,5,2,13
 P-201,South Basin Waterline,Civic Water Authority,Water,NV,Expansion phase,14,7,9,7,8,6,6,1,11</textarea></label>
             <button type="submit">Import portfolio</button>
@@ -103,11 +154,11 @@ P-201,South Basin Waterline,Civic Water Authority,Water,NV,Expansion phase,14,7,
         </section>
       </section>
 
-      <section class="lower-grid">
+      <section class="lower-grid hidden" id="lower-grid">
         <section class="pane">
           <div class="pane-header">
             <h3>Projects</h3>
-            <p>Newest updates surface first. Selecting a row loads score history and current rationale.</p>
+            <p>Only projects from your organization are visible here.</p>
           </div>
           <div id="project-list" class="project-list"></div>
         </section>
@@ -115,9 +166,9 @@ P-201,South Basin Waterline,Civic Water Authority,Water,NV,Expansion phase,14,7,
         <section class="pane detail-pane">
           <div class="pane-header">
             <h3>Selected project</h3>
-            <p>Review the latest score, breakdown, and history. Use rescore to record a new run.</p>
+            <p>Review current rationale, history, and rescore from the same org-scoped workspace.</p>
           </div>
-          <div id="project-detail" class="project-detail empty-state">Select a project to inspect its scoring history.</div>
+          <div id="project-detail" class="project-detail empty-state">Sign in to inspect project history.</div>
         </section>
       </section>
     </main>
